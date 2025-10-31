@@ -44,76 +44,93 @@ FitLife is a full-stack personalization platform that recommends gym classes, wo
 ### Prerequisites
 
 - [.NET 8 SDK](https://dotnet.microsoft.com/download)
-- [Node.js 18+](https://nodejs.org/)
 - [Docker Desktop](https://www.docker.com/products/docker-desktop)
 - [Git](https://git-scm.com/)
 
-### Local Development with Docker Compose
+### Local Development Setup
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/fitlife-app.git
-   cd fitlife-app
+   git clone https://github.com/2bxtech/gym-app-by-gymbro.git
+   cd fitlife-personalization-engine
    ```
 
-2. **Start all services**
+2. **Start infrastructure services** (SQL Server, Redis, Kafka)
    ```bash
    docker-compose up -d
+   ```
+   
+   Wait ~30 seconds for services to be healthy. Check status:
+   ```bash
+   docker-compose ps
    ```
 
 3. **Run database migrations**
    ```bash
    cd FitLife.Api
    dotnet ef database update
-   dotnet run --seed  # Seed sample data
    ```
 
-4. **Start the frontend** (separate terminal)
+4. **Start the API**
    ```bash
-   cd fitlife-web
-   npm install
-   npm run dev
+   dotnet run
    ```
 
 5. **Access the application**
-   - Frontend: http://localhost:3000
-   - API: http://localhost:8080
-   - Swagger UI: http://localhost:8080/swagger
+   - API: http://localhost:5000
+   - Swagger UI: http://localhost:5000/swagger
 
-### Running Tests
+### Quick Test
 
 ```bash
-# Backend tests
-cd FitLife.Api
-dotnet test
+# Register a new user
+curl -X POST http://localhost:5000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "test@example.com",
+    "password": "Test123!",
+    "firstName": "Test",
+    "lastName": "User",
+    "fitnessLevel": "Beginner"
+  }'
 
-# Frontend tests
-cd fitlife-web
-npm run test
+# Get upcoming classes
+curl http://localhost:5000/api/classes
+```
+
+### Stopping Services
+
+```bash
+# Stop API (Ctrl+C)
+
+# Stop Docker services
+docker-compose down
+
+# Remove volumes (clean slate)
+docker-compose down -v
 ```
 
 ## 📁 Project Structure
 
 ```
-fitlife-app/
+fitlife-personalization-engine/
 ├── FitLife.Api/              # .NET Core Web API
-│   ├── Controllers/          # API endpoints
-│   ├── Services/             # Business logic
-│   ├── Models/               # Domain models
-│   ├── Data/                 # EF Core DbContext & repositories
-│   ├── Infrastructure/       # Kafka, Redis, JWT services
-│   └── BackgroundServices/   # Event consumers & batch jobs
-├── fitlife-web/              # Vue.js frontend
-│   ├── src/
-│   │   ├── components/       # Reusable UI components
-│   │   ├── views/            # Page-level components
-│   │   ├── stores/           # Pinia state management
-│   │   ├── services/         # API client layer
-│   │   └── router/           # Vue Router configuration
-├── docker-compose.yml        # Local development stack
-├── k8s/                      # Kubernetes manifests
-├── .github/workflows/        # CI/CD pipelines
-└── docs/                     # Additional documentation
+│   ├── Controllers/          # API endpoints (Auth, Users, Classes)
+│   ├── DTOs/                 # Data transfer objects
+│   ├── Program.cs            # Application entry point
+│   └── appsettings.json      # Configuration
+├── FitLife.Core/             # Domain layer
+│   ├── Models/               # Entity models (User, Class, Interaction, Recommendation)
+│   ├── Interfaces/           # Service & repository contracts
+│   └── Services/             # Business logic (future: ScoringEngine)
+├── FitLife.Infrastructure/   # Data & external services
+│   ├── Data/                 # EF Core DbContext & migrations
+│   ├── Repositories/         # Data access implementations
+│   ├── Auth/                 # JWT token service
+│   ├── Kafka/                # Event streaming (future)
+│   └── Cache/                # Redis caching (future)
+├── docker-compose.yml        # Local development infrastructure
+└── README.md                 # This file
 ```
 
 ## 🎨 Architecture Highlights
