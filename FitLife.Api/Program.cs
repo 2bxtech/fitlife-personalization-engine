@@ -1,6 +1,8 @@
 using FitLife.Core.Interfaces;
 using FitLife.Infrastructure.Auth;
+using FitLife.Infrastructure.Cache;
 using FitLife.Infrastructure.Data;
+using FitLife.Infrastructure.Kafka;
 using FitLife.Infrastructure.Repositories;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -29,6 +31,12 @@ builder.Services.AddDbContext<FitLifeDbContext>(options =>
 // Register repositories
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IClassRepository, ClassRepository>();
+
+// Register Kafka producer (singleton - connection pooling)
+builder.Services.AddSingleton<KafkaProducer>();
+
+// Register Redis cache service (singleton - connection pooling)
+builder.Services.AddSingleton<RedisCacheService>();
 
 // Register JWT service
 builder.Services.AddSingleton<IJwtService, JwtService>();
@@ -71,6 +79,37 @@ builder.Services.AddCors(options =>
     });
 });
 
+// Add health checks
+builder.Services.AddHealthChecks()
+    .AddCheck("database", () =>
+    {
+        try
+        {
+            using var scope = builder.Services.BuildServiceProvider().CreateScope();
+            var context = scope.ServiceProvider.GetRequiredService<FitLifeDbContext>();
+            context.Database.CanConnect();
+            return Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Healthy("Database connection is healthy");
+        }
+        catch (Exception ex)
+        {
+            return Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Unhealthy("Database connection failed", ex);
+        }
+    })
+    .AddCheck("redis", () =>
+    {
+        try
+        {
+            var redis = builder.Services.BuildServiceProvider().GetRequiredService<RedisCacheService>();
+            return redis.IsConnected
+                ? Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Healthy("Redis connection is healthy")
+                : Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Unhealthy("Redis is not connected");
+        }
+        catch (Exception ex)
+        {
+            return Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Unhealthy("Redis check failed", ex);
+        }
+    });
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -87,6 +126,28 @@ app.UseCors("AllowAll");
 app.UseAuthentication();
 app.UseAuthorization();
 
+// Health check endpoints for Kubernetes probes
+app.MapHealthChecks("/health");
+
 app.MapControllers();
+
+// Graceful shutdown: Flush Kafka producer
+var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
+lifetime.ApplicationStopping.Register(() =>
+{
+    var logger = app.Services.GetRequiredService<ILogger<Program>>();
+    logger.LogInformation("Application shutting down - flushing Kafka producer");
+    
+    try
+    {
+        var kafkaProducer = app.Services.GetRequiredService<KafkaProducer>();
+        kafkaProducer.Flush(TimeSpan.FromSeconds(30));
+        logger.LogInformation("Kafka producer flushed successfully");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Error flushing Kafka producer during shutdown");
+    }
+});
 
 app.Run();
