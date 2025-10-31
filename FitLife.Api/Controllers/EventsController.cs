@@ -71,7 +71,17 @@ public class EventsController : ControllerBase
             }
 
             // Validate user from JWT token matches UserId in request
-            var tokenUserId = User.FindFirst("sub")?.Value;
+            // JwtRegisteredClaimNames.Sub becomes ClaimTypes.NameIdentifier in ASP.NET Core
+            var tokenUserId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value 
+                           ?? User.FindFirst("sub")?.Value;
+            
+            if (string.IsNullOrEmpty(tokenUserId))
+            {
+                _logger.LogError("Unable to extract user ID from JWT token. Claims: {Claims}", 
+                    string.Join(", ", User.Claims.Select(c => $"{c.Type}={c.Value}")));
+                return Unauthorized("Invalid token");
+            }
+            
             if (tokenUserId != eventDto.UserId)
             {
                 _logger.LogWarning(
@@ -158,7 +168,8 @@ public class EventsController : ControllerBase
                 });
             }
 
-            var tokenUserId = User.FindFirst("sub")?.Value;
+            var tokenUserId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value 
+                           ?? User.FindFirst("sub")?.Value;
             var publishedCount = 0;
             var errors = new List<string>();
 
