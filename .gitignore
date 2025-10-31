@@ -133,6 +133,10 @@ secrets.yaml
 # Project Specific (FitLife)
 # ============================================
 
+# Internal documentation (architecture blueprints)
+docs/
+life time fitness - gym personal.txt
+
 # Redis dump files
 dump.rdb
 
