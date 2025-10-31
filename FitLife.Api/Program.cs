@@ -1,4 +1,6 @@
+using FitLife.Core.Interfaces;
 using FitLife.Infrastructure.Data;
+using FitLife.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -19,6 +21,10 @@ builder.Services.AddDbContext<FitLifeDbContext>(options =>
         )
     )
 );
+
+// Register repositories
+builder.Services.AddScoped<IUserRepository, UserRepository>();
+builder.Services.AddScoped<IClassRepository, ClassRepository>();
 
 // Configure CORS for development
 builder.Services.AddCors(options =>
