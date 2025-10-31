@@ -1,5 +1,147 @@
 # FitLife Personalization Engine - AI Agent Instructions
 
+## 🔄 Git Workflow & GitHub Best Practices
+
+### Branch Strategy
+```
+main (protected)
+  └── development (integration branch)
+       └── feature/phase1-backend-foundation
+       └── feature/phase2-infrastructure
+       └── feature/phase3-recommendation-engine
+       └── bugfix/fix-cache-invalidation
+```
+
+### When to Commit
+**Commit after completing each logical unit of work:**
+- ✅ After creating entity models (all 4 models together)
+- ✅ After setting up DbContext and initial migration
+- ✅ After implementing a complete repository interface + implementation
+- ✅ After completing a controller with its DTOs
+- ✅ After implementing a service with its interface
+- ✅ After setting up infrastructure (docker-compose, Kafka, Redis)
+- ❌ NOT after every single file creation
+- ❌ NOT in the middle of incomplete functionality
+
+**Commit Message Format:**
+```bash
+<type>(<scope>): <short description>
+
+<optional detailed description>
+
+# Types: feat, fix, chore, docs, refactor, test, perf
+# Style: Technical and factual - avoid marketing language, superlatives, or fluff
+# Examples:
+git commit -m "feat(models): Add User, Class, Interaction, Recommendation entities
+
+- Implemented domain models with EF Core annotations
+- Added XML documentation for all properties
+- Configured navigation properties"
+
+git commit -m "feat(data): Set up EF Core DbContext with indexes
+
+- Created FitLifeDbContext with optimized indexes
+- Composite index on Class (StartTime, Type, IsActive)
+- Covering index on Recommendations (UserId, Rank)"
+
+git commit -m "chore(infra): Add docker-compose for local development
+
+- SQL Server 2022 with persistent volume
+- Redis 7 for caching layer
+- Kafka with Zookeeper for event streaming"
+```
+
+### When to Push to Remote
+**Push to feature branch after:**
+1. Completing a significant milestone (e.g., Phase 1 complete)
+2. End of work session (backup your work)
+3. Before creating a Pull Request
+4. When tests are passing locally
+
+**Command sequence:**
+```bash
+# Check what you're committing
+git status
+git diff
+
+# Stage and commit
+git add <files>
+git commit -m "feat(scope): description"
+
+# Push to feature branch
+git push origin feature/phase1-backend-foundation
+```
+
+### When to Create a Pull Request (PR)
+**Create PR when:**
+- ✅ Feature branch has completed its phase (e.g., Phase 1 fully working)
+- ✅ All code compiles and builds successfully
+- ✅ Unit tests pass (if applicable at this stage)
+- ✅ Code follows project conventions (naming, structure)
+- ✅ Ready for code review and merge to `development`
+
+**PR Template:**
+```markdown
+## Description
+Implements Phase 1: Backend Foundation
+
+**Style Note:** Keep descriptions technical and factual. Avoid marketing language, superlatives ("amazing", "powerful", "robust"), or unnecessary enthusiasm. Focus on what was built, not how great it is.
+
+## Changes
+- ✅ Created entity models (User, Class, Interaction, Recommendation)
+- ✅ Set up EF Core DbContext with performance indexes
+- ✅ Implemented repository pattern (IRepository<T>, base implementations)
+- ✅ Built CRUD controllers with DTOs
+- ✅ Configured JWT authentication
+
+## Testing
+- [x] Solution builds successfully
+- [x] EF migrations generate correctly
+- [ ] Integration tests (Phase 2)
+
+## Next Steps
+- Phase 2: Infrastructure services (Kafka, Redis, Docker)
+
+## Related Issues
+Closes #1 - Phase 1 Backend Foundation
+```
+
+**Creating PR via Git:**
+```bash
+# From feature branch, push to remote
+git push origin feature/phase1-backend-foundation
+
+# Then create PR on GitHub.com:
+# - Base: development
+# - Compare: feature/phase1-backend-foundation
+# - Add description using template above
+# - Request review (if team project)
+```
+
+### When NOT to Commit/Push
+- ❌ Broken code that doesn't compile
+- ❌ Incomplete features (half-written controller with no endpoints)
+- ❌ Sensitive data (API keys, passwords) - use `.gitignore`
+- ❌ Generated files (`bin/`, `obj/`, `node_modules/`)
+- ❌ Personal notes or internal architecture docs (already in `.gitignore`)
+
+### Merging Strategy
+1. **Feature → Development**: Via Pull Request with review
+2. **Development → Main**: Via Pull Request after full phase testing
+3. **Hotfix**: Branch from `main`, PR directly to `main` + `development`
+
+### Rollback Strategy
+```bash
+# If you need to undo last commit (not pushed yet)
+git reset --soft HEAD~1
+
+# If you need to undo pushed commit
+git revert <commit-hash>
+git push origin feature/branch-name
+```
+
+---
+
 ## ⚡ Quick Reference (Start Here)
 
 **Most Important Files:**
@@ -886,14 +1028,101 @@ Unexpected exception?          → 500 InternalServerError + log details
 
 ## Common Pitfalls to Avoid
 
-## Common Pitfalls to Avoid (Legacy - See Anti-Patterns Above)
-
 1. **Don't** put business logic in controllers - controllers only validate and delegate
 2. **Don't** return `DbSet<T>` or EF entities directly - use DTOs to avoid over-fetching
 3. **Don't** forget `async/await` on DB operations - all EF Core should be async
 4. **Don't** store sensitive data in Kafka events - events are logged and audited
 5. **Don't** regenerate recommendations synchronously on every request - use cache or return stale data
 6. **Don't** use string concatenation for SQL - always use parameterized queries or EF LINQ
+
+---
+
+## GitHub Workflow Guidelines for AI Agent
+
+### Automatic vs Manual Actions
+
+**AI Agent SHOULD automatically:**
+- ✅ Stage files after completing logical units (e.g., `git add FitLife.Core/Models/`)
+- ✅ Commit with proper messages after milestones (see commit format above)
+- ✅ Check git status before/after operations
+- ✅ Create feature branches when starting new phases
+- ✅ Switch between branches as needed
+
+**AI Agent should ASK USER before:**
+- ❓ Pushing to remote repository (`git push origin branch-name`)
+- ❓ Creating Pull Requests on GitHub
+- ❓ Merging branches (even locally)
+- ❓ Deleting branches
+- ❓ Force pushing or rebasing
+- ❓ Modifying `.gitignore` to expose/hide files
+
+**Workflow Example:**
+```bash
+# AI Agent does automatically:
+git add FitLife.Core/Models/
+git commit -m "feat(models): Add entity models with EF annotations"
+
+# AI Agent asks first:
+"Phase 1 models are complete. Ready to push to remote and create PR? (y/n)"
+# Wait for user confirmation before:
+git push origin feature/phase1-backend-foundation
+```
+
+### Commit Cadence Strategy
+
+**Small, frequent commits during development:**
+```bash
+# After entity models
+git commit -m "feat(models): Add User, Class, Interaction, Recommendation entities"
+
+# After DbContext setup
+git commit -m "feat(data): Configure EF Core DbContext with indexes"
+
+# After repositories
+git commit -m "feat(repositories): Implement IRepository<T> pattern"
+
+# After controllers
+git commit -m "feat(api): Add UsersController with CRUD endpoints"
+```
+
+**Push less frequently (at logical checkpoints):**
+- End of work session
+- After completing a full feature (all files working together)
+- Before taking a break from development
+- When asking for code review
+
+### PR Creation Guidelines
+
+**When agent suggests creating PR:**
+1. Verify all tests pass (or mention test status)
+2. Ensure code builds without errors
+3. Provide PR description with:
+   - What was implemented
+   - What's working
+   - What's pending
+   - Testing checklist
+4. Suggest reviewers if team project
+
+**PR Description Template (agent should auto-generate):**
+```markdown
+## 🎯 Phase Completed: [Phase Name]
+
+### ✅ Implemented
+- Entity models with full documentation
+- EF Core DbContext with performance indexes
+- Repository pattern with async support
+
+### 🧪 Testing Status
+- [x] Solution builds successfully
+- [x] Migrations generate without errors
+- [ ] Integration tests (deferred to Phase 2)
+
+### 📋 Next Phase
+Phase 2: Infrastructure services (Docker, Kafka, Redis)
+
+### 🔗 Related
+Closes #[issue-number]
+```
 
 ## Deployment (Docker/Kubernetes)
 
