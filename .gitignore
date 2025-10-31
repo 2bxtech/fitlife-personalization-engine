@@ -137,6 +137,9 @@ secrets.yaml
 docs/
 life time fitness - gym personal.txt
 
+# AI agent configuration (personal dev workflow)
+.github/copilot-instructions.md
+
 # Redis dump files
 dump.rdb
 
