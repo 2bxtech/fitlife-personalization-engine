@@ -39,24 +39,31 @@ try {
     
     Write-Host "   ✓ User registered: $userId" -ForegroundColor Green
     Write-Host "   Token: $($token.Substring(0, 20))..." -ForegroundColor Gray
-} catch {
+}
+catch {
     Write-Host "   ✗ Registration failed: $($_.Exception.Message)" -ForegroundColor Red
     Write-Host "   Attempting login instead..." -ForegroundColor Yellow
     
-    # Try login if user exists
-    $loginBody = @{
-        email = "testuser@lifetime.com"
-        password = "TestPass123!"
-    } | ConvertTo-Json
-    
-    $loginResponse = Invoke-RestMethod -Uri "http://localhost:5269/api/auth/login" `
-        -Method Post `
-        -Body $loginBody `
-        -ContentType "application/json"
-    
-    $token = $loginResponse.data.token
-    $userId = $loginResponse.data.user.id
-    Write-Host "   ✓ User logged in: $userId" -ForegroundColor Green
+    try {
+        # Try login if user exists
+        $loginBody = @{
+            email = "testuser@lifetime.com"
+            password = "TestPass123!"
+        } | ConvertTo-Json
+        
+        $loginResponse = Invoke-RestMethod -Uri "http://localhost:5269/api/auth/login" `
+            -Method Post `
+            -Body $loginBody `
+            -ContentType "application/json"
+        
+        $token = $loginResponse.data.token
+        $userId = $loginResponse.data.user.id
+        Write-Host "   ✓ User logged in: $userId" -ForegroundColor Green
+    }
+    catch {
+        Write-Host "   ✗ Login also failed: $($_.Exception.Message)" -ForegroundColor Red
+        exit 1
+    }
 }
 
 Write-Host ""
