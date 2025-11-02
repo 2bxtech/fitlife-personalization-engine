@@ -1,3 +1,4 @@
+using FitLife.Core.Interfaces;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
@@ -9,7 +10,7 @@ namespace FitLife.Infrastructure.Cache;
 /// Redis cache service for recommendation caching and session storage
 /// Implements cache-aside pattern with TTL management
 /// </summary>
-public class RedisCacheService : IDisposable
+public class RedisCacheService : ICacheService, IDisposable
 {
     private readonly IConnectionMultiplexer _redis;
     private readonly IDatabase _db;
