@@ -1,0 +1,198 @@
+name: Deploy FitLife to Azure
+
+on:
+  push:
+    branches:
+      - main
+      - development
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  ACR_REGISTRY: fitlifeacr.azurecr.io
+  AKS_CLUSTER_NAME: fitlife-aks
+  AKS_RESOURCE_GROUP: fitlife-rg
+  API_IMAGE_NAME: fitlife-api
+  WEB_IMAGE_NAME: fitlife-web
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+
+    - name: Restore dependencies
+      run: dotnet restore
+
+    - name: Build solution
+      run: dotnet build --configuration Release --no-restore
+
+    - name: Run tests
+      run: dotnet test --no-build --verbosity normal --configuration Release
+
+  build-and-push-api:
+    name: Build and Push API Image
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/development')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Login to Azure Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.ACR_REGISTRY }}
+        username: ${{ secrets.ACR_USERNAME }}
+        password: ${{ secrets.ACR_PASSWORD }}
+
+    - name: Extract branch name
+      shell: bash
+      run: echo "BRANCH_NAME=${GITHUB_REF#refs/heads/}" >> $GITHUB_ENV
+
+    - name: Build and push API Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./FitLife.Api/Dockerfile
+        push: true
+        tags: |
+          ${{ env.ACR_REGISTRY }}/${{ env.API_IMAGE_NAME }}:${{ env.BRANCH_NAME }}-${{ github.sha }}
+          ${{ env.ACR_REGISTRY }}/${{ env.API_IMAGE_NAME }}:${{ env.BRANCH_NAME }}-latest
+        cache-from: type=registry,ref=${{ env.ACR_REGISTRY }}/${{ env.API_IMAGE_NAME }}:buildcache
+        cache-to: type=registry,ref=${{ env.ACR_REGISTRY }}/${{ env.API_IMAGE_NAME }}:buildcache,mode=max
+
+  build-and-push-web:
+    name: Build and Push Web Image
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/development')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Login to Azure Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.ACR_REGISTRY }}
+        username: ${{ secrets.ACR_USERNAME }}
+        password: ${{ secrets.ACR_PASSWORD }}
+
+    - name: Extract branch name
+      shell: bash
+      run: echo "BRANCH_NAME=${GITHUB_REF#refs/heads/}" >> $GITHUB_ENV
+
+    - name: Build and push Web Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./fitlife-web
+        file: ./fitlife-web/Dockerfile
+        push: true
+        tags: |
+          ${{ env.ACR_REGISTRY }}/${{ env.WEB_IMAGE_NAME }}:${{ env.BRANCH_NAME }}-${{ github.sha }}
+          ${{ env.ACR_REGISTRY }}/${{ env.WEB_IMAGE_NAME }}:${{ env.BRANCH_NAME }}-latest
+        cache-from: type=registry,ref=${{ env.ACR_REGISTRY }}/${{ env.WEB_IMAGE_NAME }}:buildcache
+        cache-to: type=registry,ref=${{ env.ACR_REGISTRY }}/${{ env.WEB_IMAGE_NAME }}:buildcache,mode=max
+
+  deploy-staging:
+    name: Deploy to Staging (Development Branch)
+    runs-on: ubuntu-latest
+    needs: [build-and-push-api, build-and-push-web]
+    if: github.ref == 'refs/heads/development'
+    environment:
+      name: staging
+      url: https://staging.fitlife.example.com
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Set AKS context
+      uses: azure/aks-set-context@v3
+      with:
+        resource-group: ${{ env.AKS_RESOURCE_GROUP }}
+        cluster-name: ${{ env.AKS_CLUSTER_NAME }}
+
+    - name: Deploy to staging namespace
+      run: |
+        kubectl apply -f k8s/namespace.yaml
+        kubectl apply -f k8s/configmap.yaml -n fitlife-staging
+        kubectl apply -f k8s/secrets.yaml -n fitlife-staging
+        
+        # Update image tags
+        kubectl set image deployment/fitlife-api api=${{ env.ACR_REGISTRY }}/${{ env.API_IMAGE_NAME }}:development-${{ github.sha }} -n fitlife-staging
+        kubectl set image deployment/fitlife-web web=${{ env.ACR_REGISTRY }}/${{ env.WEB_IMAGE_NAME }}:development-${{ github.sha }} -n fitlife-staging
+        
+        # Wait for rollout
+        kubectl rollout status deployment/fitlife-api -n fitlife-staging --timeout=5m
+        kubectl rollout status deployment/fitlife-web -n fitlife-staging --timeout=5m
+
+  deploy-production:
+    name: Deploy to Production (Main Branch)
+    runs-on: ubuntu-latest
+    needs: [build-and-push-api, build-and-push-web]
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: production
+      url: https://fitlife.example.com
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Set AKS context
+      uses: azure/aks-set-context@v3
+      with:
+        resource-group: ${{ env.AKS_RESOURCE_GROUP }}
+        cluster-name: ${{ env.AKS_CLUSTER_NAME }}
+
+    - name: Deploy to production
+      run: |
+        kubectl apply -f k8s/namespace.yaml
+        kubectl apply -f k8s/configmap.yaml
+        kubectl apply -f k8s/secrets.yaml
+        kubectl apply -f k8s/api-deployment.yaml
+        kubectl apply -f k8s/web-deployment.yaml
+        kubectl apply -f k8s/ingress.yaml
+        kubectl apply -f k8s/hpa.yaml
+        
+        # Update image tags
+        kubectl set image deployment/fitlife-api api=${{ env.ACR_REGISTRY }}/${{ env.API_IMAGE_NAME }}:main-${{ github.sha }} -n fitlife
+        kubectl set image deployment/fitlife-web web=${{ env.ACR_REGISTRY }}/${{ env.WEB_IMAGE_NAME }}:main-${{ github.sha }} -n fitlife
+        
+        # Wait for rollout
+        kubectl rollout status deployment/fitlife-api -n fitlife --timeout=10m
+        kubectl rollout status deployment/fitlife-web -n fitlife --timeout=10m
+
+    - name: Run smoke tests
+      run: |
+        # Wait for services to be ready
+        sleep 30
+        
+        # Test API health endpoint
+        kubectl run curl-test --image=curlimages/curl:latest --rm -i --restart=Never -n fitlife -- \
+          curl -f http://fitlife-api-service/health || exit 1
+        
+        echo "✅ Production deployment successful!"
