@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fitlife-api
+  namespace: fitlife
+  labels:
+    app: fitlife-api
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: fitlife-api
+  template:
+    metadata:
+      labels:
+        app: fitlife-api
+    spec:
+      containers:
+      - name: api
+        image: <ACR_REGISTRY>/fitlife-api:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+        env:
+        - name: ASPNETCORE_ENVIRONMENT
+          valueFrom:
+            configMapKeyRef:
+              name: fitlife-config
+              key: ASPNETCORE_ENVIRONMENT
+        - name: ConnectionStrings__DefaultConnection
+          valueFrom:
+            secretKeyRef:
+              name: fitlife-secrets
+              key: SQL_CONNECTION_STRING
+        - name: Jwt__Secret
+          valueFrom:
+            secretKeyRef:
+              name: fitlife-secrets
+              key: JWT_SECRET
+        - name: Redis__ConnectionString
+          valueFrom:
+            configMapKeyRef:
+              name: fitlife-config
+              key: REDIS_CONNECTION_STRING
+        - name: Kafka__BootstrapServers
+          valueFrom:
+            configMapKeyRef:
+              name: fitlife-config
+              key: KAFKA_BOOTSTRAP_SERVERS
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fitlife-api-service
+  namespace: fitlife
+spec:
+  selector:
+    app: fitlife-api
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 8080
+  type: ClusterIP
