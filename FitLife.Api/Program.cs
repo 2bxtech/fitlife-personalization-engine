@@ -1,4 +1,6 @@
+using FitLife.Api.BackgroundServices;
 using FitLife.Core.Interfaces;
+using FitLife.Core.Services;
 using FitLife.Infrastructure.Auth;
 using FitLife.Infrastructure.Cache;
 using FitLife.Infrastructure.Data;
@@ -31,15 +33,27 @@ builder.Services.AddDbContext<FitLifeDbContext>(options =>
 // Register repositories
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IClassRepository, ClassRepository>();
+builder.Services.AddScoped<IInteractionRepository, InteractionRepository>();
+builder.Services.AddScoped<IRecommendationRepository, RecommendationRepository>();
+
+// Register core services
+builder.Services.AddScoped<IScoringEngine, ScoringEngine>();
+builder.Services.AddScoped<IRecommendationService, RecommendationService>();
 
 // Register Kafka producer (singleton - connection pooling)
 builder.Services.AddSingleton<KafkaProducer>();
 
 // Register Redis cache service (singleton - connection pooling)
 builder.Services.AddSingleton<RedisCacheService>();
+builder.Services.AddSingleton<ICacheService>(sp => sp.GetRequiredService<RedisCacheService>());
 
 // Register JWT service
 builder.Services.AddSingleton<IJwtService, JwtService>();
+
+// Register background workers
+builder.Services.AddHostedService<EventConsumerService>();
+builder.Services.AddHostedService<RecommendationGeneratorService>();
+builder.Services.AddHostedService<UserProfilerService>();
 
 // Configure JWT Authentication
 var jwtSecret = builder.Configuration["Jwt:Secret"] ?? throw new InvalidOperationException("JWT Secret not configured");
