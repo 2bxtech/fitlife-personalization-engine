@@ -2,11 +2,21 @@
 
 Gym class recommendation system for Life Time Fitness using event-driven architecture and multi-factor scoring algorithms.
 
+## Why I Built This
+
+This project demonstrates patterns I use professionally in enterprise software development:
+
+- **Event-driven architecture** with Kafka - similar to logistics event tracking and async workflows I've built at C.H. Robinson
+- **Multi-factor scoring algorithms** - recommendation engines that balance multiple weighted criteria
+- **Redis caching strategies** - cache-aside patterns with TTL and invalidation for high-read workloads
+- **Background workers** - long-running services (IHostedService) for batch processing and event consumption
+- **.NET 8 + Vue 3 full-stack** - complete end-to-end application with JWT auth, Pinia state management, and Tailwind CSS
+
+The architecture prioritizes **observability**, **loose coupling**, and **horizontal scalability** - principles that matter in production systems.
+
 ## Overview
 
 FitLife delivers personalized class recommendations based on user preferences, interaction history, and behavior patterns. The system processes user events asynchronously through Kafka, generates recommendations using a 9-factor scoring algorithm, and caches results in Redis for performance.
-
-**Status**: Phase 4 complete - Production-ready full-stack application
 
 ## Tech Stack
 
