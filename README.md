@@ -4,15 +4,19 @@ Gym class recommendation system for Life Time Fitness using event-driven archite
 
 ## Why I Built This
 
-This project demonstrates patterns I use professionally in enterprise software development:
+In October 2025, a recruiter reached out about a Full Stack .NET Core contract opportunity with Life Time Fitness - joining their **Personalization/Pega rebuild team**. The role's tech stack (.NET Core, Vue.js, Azure, Kafka, Kubernetes) aligned well with my experience, so I built this project to:
 
-- **Event-driven architecture** with Kafka - similar to logistics event tracking and async workflows I've built at C.H. Robinson
-- **Multi-factor scoring algorithms** - recommendation engines that balance multiple weighted criteria
-- **Redis caching strategies** - cache-aside patterns with TTL and invalidation for high-read workloads
-- **Background workers** - long-running services (IHostedService) for batch processing and event consumption
-- **.NET 8 + Vue 3 full-stack** - complete end-to-end application with JWT auth, Pinia state management, and Tailwind CSS
+1. **Demonstrate domain understanding** - Show I could design a personalization engine for gym class recommendations
+2. **Prove the tech stack fit** - .NET 8, Vue 3, Kafka, Redis, Kubernetes - exactly what the role required
+3. **Explore the problem space** - Event-driven user tracking, multi-factor scoring algorithms, caching strategies
 
-The architecture prioritizes **observability**, **loose coupling**, and **horizontal scalability** - principles that matter in production systems.
+This project demonstrates patterns I use professionally:
+
+- **Event-driven architecture** with Kafka - similar to logistics event tracking at C.H. Robinson
+- **Multi-factor scoring algorithms** - recommendation engines balancing weighted criteria (instructor preference, fitness level, time slots, user segments)
+- **Redis caching strategies** - cache-aside pattern with TTL and invalidation for high-read workloads
+- **Background workers** - IHostedService for batch processing and event consumption
+- **.NET 8 + Vue 3 full-stack** - complete application with JWT auth, Pinia state management, and Tailwind CSS
 
 ## Overview
 
