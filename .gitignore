@@ -153,3 +153,4 @@ sqlserver-data/
 # Coverage reports
 coverage/
 *.lcov
+.github/copilot-instructions.md

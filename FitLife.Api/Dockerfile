@@ -7,9 +7,10 @@ COPY FitLife.sln ./
 COPY FitLife.Api/FitLife.Api.csproj FitLife.Api/
 COPY FitLife.Core/FitLife.Core.csproj FitLife.Core/
 COPY FitLife.Infrastructure/FitLife.Infrastructure.csproj FitLife.Infrastructure/
+COPY FitLife.Tests/FitLife.Tests.csproj FitLife.Tests/
 
 # Restore dependencies
-RUN dotnet restore
+RUN dotnet restore FitLife.Api/FitLife.Api.csproj
 
 # Copy everything else and build
 COPY . .

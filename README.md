@@ -2,11 +2,25 @@
 
 Gym class recommendation system for Life Time Fitness using event-driven architecture and multi-factor scoring algorithms.
 
+## Why I Built This
+
+In October 2025, a recruiter reached out about a Full Stack .NET Core contract opportunity with Life Time Fitness - joining their **Personalization/Pega rebuild team**. The role's tech stack (.NET Core, Vue.js, Azure, Kafka, Kubernetes) aligned well with my experience, so I built this project to:
+
+1. **Demonstrate domain understanding** - Show I could design a personalization engine for gym class recommendations
+2. **Prove the tech stack fit** - .NET 8, Vue 3, Kafka, Redis, Kubernetes - exactly what the role required
+3. **Explore the problem space** - Event-driven user tracking, multi-factor scoring algorithms, caching strategies
+
+This project demonstrates patterns I use professionally:
+
+- **Event-driven architecture** with Kafka - similar to logistics event tracking at C.H. Robinson
+- **Multi-factor scoring algorithms** - recommendation engines balancing weighted criteria (instructor preference, fitness level, time slots, user segments)
+- **Redis caching strategies** - cache-aside pattern with TTL and invalidation for high-read workloads
+- **Background workers** - IHostedService for batch processing and event consumption
+- **.NET 8 + Vue 3 full-stack** - complete application with JWT auth, Pinia state management, and Tailwind CSS
+
 ## Overview
 
 FitLife delivers personalized class recommendations based on user preferences, interaction history, and behavior patterns. The system processes user events asynchronously through Kafka, generates recommendations using a 9-factor scoring algorithm, and caches results in Redis for performance.
-
-**Status**: Phase 4 complete - Production-ready full-stack application
 
 ## Tech Stack
 

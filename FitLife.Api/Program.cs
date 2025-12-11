@@ -204,6 +204,31 @@ builder.Services.AddHealthChecks()
 
 var app = builder.Build();
 
+// Seed database if --seed argument is provided
+if (args.Contains("--seed"))
+{
+    using var scope = app.Services.CreateScope();
+    var services = scope.ServiceProvider;
+    var logger = services.GetRequiredService<ILogger<Program>>();
+    
+    try
+    {
+        logger.LogInformation("Seeding database...");
+        var context = services.GetRequiredService<FitLifeDbContext>();
+        var seeder = new FitLife.Infrastructure.Data.DbSeeder(context, services.GetRequiredService<ILogger<FitLife.Infrastructure.Data.DbSeeder>>());
+        await seeder.SeedAsync();
+        logger.LogInformation("Database seeded successfully!");
+        
+        // Exit after seeding
+        return;
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "An error occurred while seeding the database");
+        throw;
+    }
+}
+
 // Add correlation ID middleware (before other middleware)
 app.Use(async (context, next) =>
 {
