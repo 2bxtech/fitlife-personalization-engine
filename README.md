@@ -489,29 +489,6 @@ git commit -m "fix(cache): Correct Redis key pattern from recs: to rec:"
 git commit -m "chore(docker): Add health checks to compose services"
 ```
 
-**Pull Request Process**:
-1. Create feature branch from `development`
-2. Implement changes with logical commits
-3. Push to remote and create PR to `development`
-4. After review and tests pass, merge to `development`
-5. Periodically merge `development` → `main` for releases
-
-## Contributing
-
-**Development Standards**:
-- Use async/await for all I/O operations
-- Follow repository pattern for data access
-- No business logic in controllers or repositories
-- DTOs for all API responses (never return entities)
-- Comprehensive error handling with structured logging
-- Unit tests for business logic (services, scoring engine)
-
-**Code Style**:
-- Backend: Follow .NET coding conventions
-- Frontend: ESLint + Prettier configuration
-- Naming: PascalCase (C#), camelCase (TypeScript)
-- Async methods: Suffix with `Async`
-
 ## License
 
 MIT
