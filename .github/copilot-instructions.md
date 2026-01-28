@@ -78,6 +78,30 @@ public class RecommendationService : IRecommendationService
 - Specific implementations: `UserRepository : Repository<User>, IUserRepository`
 - **No business logic** in repositories - only data access queries
 
+**EF Core Best Practices**:
+```csharp
+// DbContext registration with retry logic (Program.cs)
+builder.Services.AddDbContext<FitLifeDbContext>(options =>
+    options.UseSqlServer(
+        builder.Configuration.GetConnectionString("DefaultConnection"),
+        sqlOptions => sqlOptions.EnableRetryOnFailure(
+            maxRetryCount: 3,
+            maxRetryDelay: TimeSpan.FromSeconds(5),
+            errorNumbersToAdd: null
+        )
+    )
+);
+
+// Always use async methods
+var user = await _context.Users.FindAsync(userId);
+
+// Avoid N+1 queries - use Include for related data
+var classes = await _context.Classes
+    .Include(c => c.Instructor)
+    .Where(c => c.IsActive)
+    .ToListAsync();
+```
+
 **Background Workers** (IHostedService):
 ```csharp
 protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -97,12 +121,29 @@ protected override async Task ExecuteAsync(CancellationToken stoppingToken)
 
 **Kafka Event Schema** (user-events topic):
 ```csharp
+// Validate against EventTypes static class (FitLife.Core.Models)
+if (!EventTypes.IsValid(eventType)) throw new ArgumentException("Invalid event type");
+
 await _kafka.ProduceAsync("user-events", new UserEvent {
     UserId = userId,
     ItemId = classId,
-    EventType = "View", // MUST be: View|Click|Book|Complete|Cancel|Rate
+    EventType = EventTypes.View, // Use constants: EventTypes.{View|Click|Book|Complete|Cancel|Rate}
     Timestamp = DateTime.UtcNow,
-    Metadata = JsonSerializer.Serialize(new { source = "browse" })
+    Metadata = new Dictionary<string, object> { ["source"] = "browse" }
+});
+```
+
+**Kafka Producer Lifecycle**:
+```csharp
+// Register as singleton (Program.cs)
+builder.Services.AddSingleton<KafkaProducer>();
+
+// Graceful shutdown: Flush messages before app stops
+var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
+lifetime.ApplicationStopping.Register(() =>
+{
+    var kafkaProducer = app.Services.GetRequiredService<KafkaProducer>();
+    kafkaProducer.Flush(TimeSpan.FromSeconds(30)); // Wait up to 30s for pending messages
 });
 ```
 
@@ -197,7 +238,26 @@ IX_Recommendations_UserId_Rank (covering: Score, Reason)
 
 ---
 
-## 🚀 Developer Workflows
+## � Project Structure Notes
+
+**DTOs Location** (CRITICAL):
+```
+✅ FitLife.Core/DTOs/          # Shared DTOs - prevents circular dependencies
+❌ FitLife.Api/DTOs/           # Don't create DTOs here - causes circular refs
+✅ FitLife.Api/Controllers/    # Controllers reference Core DTOs
+```
+
+**Why?** FitLife.Api references FitLife.Core. If DTOs are in Api, Core can't use them without circular dependency.
+
+**Phased Development History**:
+- Phase 1: Backend foundation (models, repositories, auth, controllers)
+- Phase 2: Infrastructure (Kafka, Redis, event tracking)
+- Phase 3: Recommendation engine (scoring algorithm, background workers)
+- Phase 4: Frontend (Vue SPA) + Production (Docker, K8s, CI/CD)
+
+---
+
+## �🚀 Developer Workflows
 
 ### Local Development (Windows)
 ```powershell
@@ -209,6 +269,7 @@ cd FitLife.Api
 dotnet ef database update
 dotnet run  # http://localhost:5269
 # Seed data on first run with --seed flag
+dotnet run --seed  # Seeds sample users, classes, instructors (exits after seeding)
 
 # Frontend (separate terminal)
 cd fitlife-web
@@ -217,12 +278,19 @@ npm run dev  # http://localhost:3000
 ```
 
 **Connection String Note**: Default password is `YourStrong@Passw0rd` (see `docker-compose.yml` and `appsettings.json`)
+**Database Seeding**: Use `dotnet run --seed` to populate initial data (users, classes, instructors, interactions). Application exits after seeding.
 
 ### Testing
 ```bash
 dotnet test                                    # All tests
 dotnet test --filter "Category=Integration"   # Integration only
 cd fitlife-web && npm run test                # Frontend unit tests
+```
+
+**⚠️ CI/CD Note**: Ensure test projects target `net8.0` in .csproj. GitHub Actions runners support .NET 8 SDK but not .NET 10.
+```xml
+<!-- FitLife.Tests/FitLife.Tests.csproj -->
+<TargetFramework>net8.0</TargetFramework>  <!-- NOT net10.0 -->
 ```
 
 **Key Test Files**:
@@ -255,6 +323,7 @@ POST /api/auth/login     # Returns { token, user }
 GET  /api/recommendations/{userId}?limit=10  # Cached recs
 POST /api/recommendations/{userId}/refresh   # Force regenerate
 POST /api/events         # Track interaction (async to Kafka)
+POST /api/events/batch   # Track multiple events (batch processing)
 GET  /api/classes?type=Yoga&startTime=2025-11-03  # Filtered search
 GET  /health             # Health check for Kubernetes probes
 ```
@@ -289,6 +358,8 @@ Invoke-RestMethod -Uri "http://localhost:5269/api/recommendations/$userId" -Head
 5. **DON'T** query Interactions without time filter → Always include `Timestamp > @cutoff`
 6. **DON'T** return EF entities from controllers → Use DTOs
 7. **DON'T** accept any string for `EventType` → Validate against enum
+8. **DON'T** put DTOs in FitLife.Api → Circular dependencies occur; use `FitLife.Core/DTOs/`
+9. **DON'T** use `User.FindFirst("sub")` alone → JWT 'sub' becomes `ClaimTypes.NameIdentifier` (see Security Gotchas)
 
 ---
 
@@ -306,10 +377,33 @@ var isValid = BCrypt.Net.BCrypt.Verify(password, storedHash);
   "segment": "YogaEnthusiast", "exp": 1730246400 }
 ```
 
-**Middleware Order** (CRITICAL):
+**JWT Claims Extraction (CRITICAL GOTCHA)**:
 ```csharp
-app.UseAuthentication();  // MUST be before Authorization
+// ⚠️ WRONG: JWT 'sub' claim becomes ClaimTypes.NameIdentifier in ASP.NET Core
+var userId = User.FindFirst("sub")?.Value; // Returns null!
+
+// ✅ CORRECT: Use ClaimTypes.NameIdentifier or fallback pattern
+var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value 
+             ?? User.FindFirst("sub")?.Value;
+
+// This was the cause of the infamous 403 error in Phase 2!
+```
+
+**Middleware Order** (CRITICAL - Program.cs lines 260-270):
+```csharp
+// Correlation ID middleware (first - for request tracking)
+app.Use(async (context, next) => {
+    var correlationId = context.Request.Headers["X-Correlation-ID"].FirstOrDefault() ?? Guid.NewGuid().ToString();
+    context.Items["CorrelationId"] = correlationId;
+    context.Response.Headers.Append("X-Correlation-ID", correlationId);
+    await next();
+});
+
+app.UseCors("AllowFrontend");
+app.UseIpRateLimiting();        // Rate limiting before auth
+app.UseAuthentication();        // MUST be before Authorization
 app.UseAuthorization();
+app.MapHealthChecks("/health"); // Health checks for K8s probes
 app.MapControllers();
 ```
 
@@ -352,7 +446,7 @@ Business logic (scoring)?       → FitLife.Core/Services
 Data access (EF queries)?       → FitLife.Infrastructure/Repositories
 External services (Kafka)?      → FitLife.Infrastructure/Kafka
 HTTP handling?                  → FitLife.Api/Controllers
-DTOs?                           → FitLife.Api/DTOs
+DTOs?                           → FitLife.Core/DTOs
 ```
 
 **Async or sync?**
@@ -392,7 +486,11 @@ docker build -t fitlife-web:latest ./fitlife-web
 **Event schema?** → `docs/API.md` Event Tracking section  
 **Database indexes?** → `docs/DATABASE.md` + migration files  
 **Background worker config?** → `appsettings.json` BackgroundWorkers section  
-**Middleware registration order?** → `FitLife.Api/Program.cs` lines 195-200 (critical: Authentication before Authorization)  
+**Middleware registration order?** → `FitLife.Api/Program.cs` lines 260-270 (critical: Authentication before Authorization)  
 **DI container registration?** → `FitLife.Api/Program.cs` lines 63-95  
 **Redis connection failing?** → Check port 6380 (mapped from container's 6379 to avoid conflicts)  
-**Kafka not receiving events?** → Check `KafkaProducer` uses topic "user-events", verify with consumer script
+**Kafka not receiving events?** → Check `KafkaProducer` uses topic "user-events", verify with consumer script  
+**JWT 403 errors on authenticated endpoints?** → Check Claims extraction (use `ClaimTypes.NameIdentifier` not "sub")  
+**Circular dependency on build?** → Ensure DTOs are in `FitLife.Core/DTOs/`, NOT `FitLife.Api/DTOs/`  
+**CI/CD build failing?** → Verify .csproj targets net8.0 (not net10.0) - GitHub Actions runners don't support .NET 10 yet  
+**Local Redis conflict?** → This project uses port 6380 externally (mapped from 6379) to avoid conflicts with existing Redis instances

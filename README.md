@@ -98,7 +98,8 @@ This starts:
 ```bash
 cd FitLife.Api
 dotnet ef database update  # Apply migrations
-dotnet run --seed          # Start API with seed data
+dotnet run --seed          # Seed sample data (exits after seeding)
+dotnet run                 # Start API
 ```
 
 API available at: `http://localhost:5269`  
@@ -379,7 +380,7 @@ Add these to repository settings:
 ```json
 {
   "ConnectionStrings": {
-    "DefaultConnection": "Server=localhost,1433;Database=FitLife;User Id=sa;Password=YourPassword123!;TrustServerCertificate=true"
+    "DefaultConnection": "Server=localhost,1433;Database=FitLife;User Id=sa;Password=YourStrong@Passw0rd;TrustServerCertificate=true"
   },
   "Jwt": {
     "Secret": "your-secret-key-min-32-chars",
@@ -463,11 +464,9 @@ VITE_API_URL=http://localhost:5269
 
 ## Documentation
 
-- **Architecture**: `docs/ARCHITECTURE.md` - System design and component interactions
-- **API**: `docs/API.md` - Complete API reference with examples
-- **Database**: `docs/DATABASE.md` - Schema, indexes, and relationships
-- **Recommendations**: `docs/RECOMMENDATIONS.md` - Scoring algorithm details
-- **Development**: `docs/DEVELOPMENT.md` - Coding standards and patterns
+- **Architecture**: `public-docs/Architecture.md` - System design and component interactions
+- **Design Decisions**: `public-docs/FitLife-Decisions.md` - Key architectural choices and trade-offs explained
+- **Recommendations**: `public-docs/Recommendations.md` - Scoring algorithm details
 
 ## Git Workflow
 

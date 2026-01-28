@@ -1,0 +1,19 @@
+{
+  "// INSTRUCTIONS": "Copy this file to appsettings.Local.json (gitignored) for machine-specific overrides",
+  
+  "ConnectionStrings": {
+    "DefaultConnection": "Server=localhost,1433;Database=FitLife;User Id=sa;Password=YourStrong@Passw0rd;TrustServerCertificate=true"
+  },
+  
+  "Redis": {
+    "ConnectionString": "localhost:6380"
+  },
+  
+  "Kafka": {
+    "BootstrapServers": "localhost:9092"
+  },
+  
+  "Jwt": {
+    "Secret": "your-local-dev-secret-key-minimum-32-characters"
+  }
+}
