@@ -2,11 +2,15 @@
 import { ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useRecommendationStore } from '@/stores/recommendations'
+import { useToast } from '@/composables/useToast'
+import { userService } from '@/services/userService'
 
 const authStore = useAuthStore()
 const recommendationStore = useRecommendationStore()
+const toast = useToast()
 
 const editing = ref(false)
+const saving = ref(false)
 const formData = ref({
   firstName: authStore.user?.firstName || '',
   lastName: authStore.user?.lastName || '',
@@ -35,24 +39,31 @@ function cancelEditing() {
 }
 
 async function saveProfile() {
+  if (!authStore.user) return
+  saving.value = true
   try {
-    // TODO: Implement update profile API call
-    // For now, just update local state
-    if (authStore.user) {
-      authStore.user.firstName = formData.value.firstName
-      authStore.user.lastName = formData.value.lastName
-      authStore.user.fitnessLevel = formData.value.fitnessLevel
-      authStore.user.goals = formData.value.goals
-      authStore.user.preferredClassTypes = formData.value.preferredClassTypes
-      localStorage.setItem('user', JSON.stringify(authStore.user))
-      
-      // Invalidate recommendations cache
-      await recommendationStore.refreshRecommendations(authStore.user.id)
-    }
+    const updatedUser = await userService.updatePreferences(authStore.user.id, {
+      fitnessLevel: formData.value.fitnessLevel,
+      goals: formData.value.goals,
+      preferredClassTypes: formData.value.preferredClassTypes,
+    })
+
+    // Update local state with server response
+    authStore.user.fitnessLevel = updatedUser.fitnessLevel
+    authStore.user.goals = updatedUser.goals
+    authStore.user.preferredClassTypes = updatedUser.preferredClassTypes
+    authStore.user.segment = updatedUser.segment
+    localStorage.setItem('user', JSON.stringify(authStore.user))
+
+    // Refresh recommendations since preferences changed
+    await recommendationStore.refreshRecommendations(authStore.user.id)
+
     editing.value = false
-    alert('Profile updated successfully!')
-  } catch (error) {
-    alert('Failed to update profile')
+    toast.success('Profile updated successfully!')
+  } catch (error: any) {
+    toast.error(error.message || 'Failed to update profile')
+  } finally {
+    saving.value = false
   }
 }
 
@@ -139,20 +150,6 @@ function toggleClassType(type: string) {
               <span v-if="!authStore.user?.preferredClassTypes?.length" class="text-gray-500">None set</span>
             </div>
           </div>
-
-          <div>
-            <h2 class="text-sm font-medium text-gray-500 mb-1">Favorite Instructors</h2>
-            <div class="flex flex-wrap gap-2 mt-2">
-              <span
-                v-for="instructor in authStore.user?.favoriteInstructors"
-                :key="instructor"
-                class="px-3 py-1 bg-primary-100 text-primary-700 rounded-full text-sm"
-              >
-                {{ instructor }}
-              </span>
-              <span v-if="!authStore.user?.favoriteInstructors?.length" class="text-gray-500">None yet</span>
-            </div>
-          </div>
         </div>
 
         <!-- Edit Mode -->
@@ -234,13 +231,15 @@ function toggleClassType(type: string) {
           <div class="flex space-x-4">
             <button
               type="submit"
-              class="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+              :disabled="saving"
+              class="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:bg-gray-300 transition-colors"
             >
-              Save Changes
+              {{ saving ? 'Saving...' : 'Save Changes' }}
             </button>
             <button
               type="button"
               @click="cancelEditing"
+              :disabled="saving"
               class="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
             >
               Cancel

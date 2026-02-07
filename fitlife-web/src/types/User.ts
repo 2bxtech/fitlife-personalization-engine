@@ -6,9 +6,9 @@ export interface User {
   fitnessLevel: string
   goals: string[]
   preferredClassTypes: string[]
-  favoriteInstructors: string[]
-  segment: string
+  segment: string | null
   createdAt: string
+  updatedAt?: string
 }
 
 export interface LoginRequest {

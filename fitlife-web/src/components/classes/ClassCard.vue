@@ -84,8 +84,8 @@ onMounted(() => {
 
     <div class="grid grid-cols-2 gap-4 mb-4 text-sm">
       <div>
-        <span class="text-gray-600">Difficulty:</span>
-        <span class="ml-2 font-semibold">{{ classData.difficulty }}</span>
+        <span class="text-gray-600">Level:</span>
+        <span class="ml-2 font-semibold">{{ classData.level }}</span>
       </div>
       <div>
         <span class="text-gray-600">Rating:</span>

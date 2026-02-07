@@ -1,12 +1,9 @@
 import type { Class } from './Class'
 
 export interface Recommendation {
-  userId: string
-  itemId: string
-  itemType: string
-  score: number
   rank: number
+  score: number
   reason: string
+  class: Class
   generatedAt: string
-  classDetails?: Class
 }

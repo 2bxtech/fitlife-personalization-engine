@@ -57,8 +57,8 @@ function handleBook(classId: string) {
     <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       <ClassCard
         v-for="rec in recommendationStore.recommendations"
-        :key="rec.itemId"
-        :class-data="rec.classDetails!"
+        :key="rec.class.id"
+        :class-data="rec.class"
         :show-recommendation-reason="true"
         :recommendation-reason="rec.reason"
         @book="handleBook"
