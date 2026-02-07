@@ -155,22 +155,24 @@ public class EventConsumerService : BackgroundService
             {
                 var interactionRepository = scope.ServiceProvider.GetRequiredService<IInteractionRepository>();
                 await interactionRepository.AddAsync(interaction);
+                await interactionRepository.SaveChangesAsync();
 
                 _logger.LogInformation(
                     "Stored interaction: {InteractionId} - User={UserId}, Event={EventType}",
                     interaction.Id, interaction.UserId, interaction.EventType);
             }
 
-            // Check if cache invalidation is needed (for Book events)
-            if (userEvent.EventType == "Book")
+            // Check if cache invalidation is needed (for Book, Cancel, Complete, Rate events)
+            var cacheInvalidatingEvents = new[] { "Book", "Cancel", "Complete", "Rate" };
+            if (cacheInvalidatingEvents.Contains(userEvent.EventType))
             {
                 using (var scope = _serviceProvider.CreateScope())
                 {
                     var recommendationService = scope.ServiceProvider.GetRequiredService<IRecommendationService>();
                     await recommendationService.InvalidateCacheAsync(userEvent.UserId);
 
-                    _logger.LogDebug("Invalidated recommendation cache for user {UserId} after booking", 
-                        userEvent.UserId);
+                    _logger.LogDebug("Invalidated recommendation cache for user {UserId} after {EventType}", 
+                        userEvent.UserId, userEvent.EventType);
                 }
             }
         }
