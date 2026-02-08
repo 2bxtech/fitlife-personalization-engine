@@ -1,91 +1,64 @@
-using FitLife.Core.Interfaces;
-using FitLife.Infrastructure.Cache;
 using FitLife.Infrastructure.Data;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 
 namespace FitLife.Tests;
 
 /// <summary>
-/// Custom WebApplicationFactory that replaces external dependencies
-/// (SQL Server, Redis, Kafka) with in-memory/fake implementations.
-/// KafkaProducer is left as-is (uses app config, connects lazily, won't fail in tests).
+/// Custom WebApplicationFactory for integration tests.
+/// Configures the test environment with an in-memory database.
 /// </summary>
 public class FitLifeWebApplicationFactory : WebApplicationFactory<Program>
 {
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
-
+        
         builder.ConfigureServices(services =>
         {
-            // Remove ALL EF Core and SqlServer related descriptors to prevent
-            // the "multiple database providers registered" error.
-            // Must check both ServiceType and ImplementationType since some
-            // provider services are registered with factory delegates.
-            var descriptorsToRemove = services.Where(d =>
+            // Remove the existing DbContext registration
+            var descriptor = services.SingleOrDefault(
+                d => d.ServiceType == typeof(DbContextOptions<FitLifeDbContext>));
+            
+            if (descriptor != null)
             {
-                var serviceTypeName = d.ServiceType.FullName ?? string.Empty;
-                var implTypeName = d.ImplementationType?.FullName ?? string.Empty;
-                return serviceTypeName.Contains("EntityFrameworkCore") ||
-                       serviceTypeName.Contains("SqlServer") ||
-                       implTypeName.Contains("EntityFrameworkCore") ||
-                       implTypeName.Contains("SqlServer") ||
-                       d.ServiceType == typeof(FitLifeDbContext) ||
-                       d.ServiceType == typeof(DbContextOptions<FitLifeDbContext>);
-            }).ToList();
-
-            foreach (var descriptor in descriptorsToRemove)
                 services.Remove(descriptor);
+            }
 
-            // Add in-memory database for testing.
-            // IMPORTANT: DB name must be captured outside the lambda so all
-            // DbContext instances within this factory share the same database.
-            var dbName = "FitLifeTestDb_" + Guid.NewGuid().ToString("N");
+            // Add DbContext using in-memory database for testing
             services.AddDbContext<FitLifeDbContext>(options =>
             {
-                options.UseInMemoryDatabase(dbName);
+                options.UseInMemoryDatabase("FitLifeTestDb");
             });
 
-            // Replace real Redis cache with in-memory fake
-            services.RemoveAll<RedisCacheService>();
-            services.RemoveAll<ICacheService>();
-            services.AddSingleton<ICacheService, FakeCacheService>();
-
-            // Remove hosted services (background workers) — not needed in tests
-            services.RemoveAll<Microsoft.Extensions.Hosting.IHostedService>();
+            // Build service provider and ensure database is created
+            var serviceProvider = services.BuildServiceProvider();
+            using var scope = serviceProvider.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<FitLifeDbContext>();
+            db.Database.EnsureCreated();
         });
     }
-}
 
-/// <summary>
-/// In-memory cache service for testing
-/// </summary>
-public class FakeCacheService : ICacheService
-{
-    private readonly Dictionary<string, object> _cache = new();
-
-    public bool IsConnected => true;
-
-    public Task<T?> GetAsync<T>(string key) where T : class
+    protected override IHost CreateHost(IHostBuilder builder)
     {
-        if (_cache.TryGetValue(key, out var value))
-            return Task.FromResult(value as T);
-        return Task.FromResult<T?>(null);
-    }
+        // Suppress background services during testing to avoid interference
+        builder.ConfigureServices(services =>
+        {
+            // Remove hosted services (background workers)
+            var hostedServices = services
+                .Where(descriptor => descriptor.ServiceType == typeof(IHostedService))
+                .ToList();
+            
+            foreach (var service in hostedServices)
+            {
+                services.Remove(service);
+            }
+        });
 
-    public Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiration = null) where T : class
-    {
-        _cache[key] = value;
-        return Task.FromResult(true);
-    }
-
-    public Task<bool> DeleteAsync(string key)
-    {
-        _cache.Remove(key);
-        return Task.FromResult(true);
+        return base.CreateHost(builder);
     }
 }
