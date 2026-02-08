@@ -94,8 +94,8 @@ function toggleClassType(type: string) {
           <h1 class="text-3xl font-bold text-gray-900">My Profile</h1>
           <button
             v-if="!editing"
-            @click="startEditing"
             class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+            @click="startEditing"
           >
             Edit Profile
           </button>
@@ -153,7 +153,7 @@ function toggleClassType(type: string) {
         </div>
 
         <!-- Edit Mode -->
-        <form v-else @submit.prevent="saveProfile" class="space-y-6">
+        <form v-else class="space-y-6" @submit.prevent="saveProfile">
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-2">First Name</label>
@@ -195,13 +195,13 @@ function toggleClassType(type: string) {
                 v-for="goal in availableGoals"
                 :key="goal"
                 type="button"
-                @click="toggleGoal(goal)"
                 :class="[
                   'px-4 py-2 rounded-lg border transition-colors',
                   formData.goals.includes(goal)
                     ? 'bg-primary-600 text-white border-primary-600'
                     : 'bg-white text-gray-700 border-gray-300 hover:border-primary-500'
                 ]"
+                @click="toggleGoal(goal)"
               >
                 {{ goal }}
               </button>
@@ -215,13 +215,13 @@ function toggleClassType(type: string) {
                 v-for="type in classTypes"
                 :key="type"
                 type="button"
-                @click="toggleClassType(type)"
                 :class="[
                   'px-4 py-2 rounded-lg border transition-colors',
                   formData.preferredClassTypes.includes(type)
                     ? 'bg-primary-600 text-white border-primary-600'
                     : 'bg-white text-gray-700 border-gray-300 hover:border-primary-500'
                 ]"
+                @click="toggleClassType(type)"
               >
                 {{ type }}
               </button>
@@ -238,9 +238,9 @@ function toggleClassType(type: string) {
             </button>
             <button
               type="button"
-              @click="cancelEditing"
               :disabled="saving"
               class="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+              @click="cancelEditing"
             >
               Cancel
             </button>

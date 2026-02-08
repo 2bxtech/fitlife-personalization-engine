@@ -33,9 +33,9 @@ function handleBook(classId: string) {
     <div class="flex justify-between items-center mb-6">
       <h2 class="text-2xl font-bold text-gray-800">Recommended For You</h2>
       <button 
-        @click="handleRefresh" 
-        :disabled="recommendationStore.loading"
+        :disabled="recommendationStore.loading" 
         class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:bg-gray-300 transition-colors"
+        @click="handleRefresh"
       >
         {{ recommendationStore.loading ? 'Refreshing...' : 'Refresh' }}
       </button>

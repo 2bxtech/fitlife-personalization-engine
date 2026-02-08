@@ -55,7 +55,7 @@ function closeMenu() {
             >
               {{ authStore.user?.firstName }}
             </router-link>
-            <button @click="handleLogout" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors">
+            <button class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors" @click="handleLogout">
               Logout
             </button>
           </template>
@@ -75,9 +75,9 @@ function closeMenu() {
 
         <!-- Mobile hamburger button -->
         <button
-          @click="menuOpen = !menuOpen"
           class="md:hidden p-2 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors"
           aria-label="Toggle menu"
+          @click="menuOpen = !menuOpen"
         >
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path v-if="!menuOpen" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
@@ -91,31 +91,31 @@ function closeMenu() {
         <template v-if="authStore.isAuthenticated">
           <router-link
             to="/dashboard"
-            @click="closeMenu"
             class="block px-3 py-2 rounded-lg text-gray-700 hover:bg-primary-50 hover:text-primary-600 transition-colors"
             active-class="bg-primary-50 text-primary-700 font-semibold"
+            @click="closeMenu"
           >
             Dashboard
           </router-link>
           <router-link
             to="/classes"
-            @click="closeMenu"
             class="block px-3 py-2 rounded-lg text-gray-700 hover:bg-primary-50 hover:text-primary-600 transition-colors"
             active-class="bg-primary-50 text-primary-700 font-semibold"
+            @click="closeMenu"
           >
             Classes
           </router-link>
           <router-link
             to="/profile"
-            @click="closeMenu"
             class="block px-3 py-2 rounded-lg text-gray-700 hover:bg-primary-50 hover:text-primary-600 transition-colors"
             active-class="bg-primary-50 text-primary-700 font-semibold"
+            @click="closeMenu"
           >
             Profile
           </router-link>
           <button
-            @click="handleLogout"
             class="w-full text-left px-3 py-2 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors"
+            @click="handleLogout"
           >
             Logout
           </button>
@@ -123,16 +123,16 @@ function closeMenu() {
         <template v-else>
           <router-link
             to="/login"
-            @click="closeMenu"
             class="block px-3 py-2 rounded-lg text-gray-700 hover:bg-primary-50 hover:text-primary-600 transition-colors"
             active-class="bg-primary-50 text-primary-700 font-semibold"
+            @click="closeMenu"
           >
             Login
           </router-link>
           <router-link
             to="/register"
-            @click="closeMenu"
             class="block px-3 py-2 rounded-lg bg-primary-600 text-white text-center hover:bg-primary-700 transition-colors"
+            @click="closeMenu"
           >
             Sign Up
           </router-link>

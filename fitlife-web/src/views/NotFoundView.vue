@@ -14,8 +14,8 @@ const router = useRouter()
       </p>
       <div class="flex justify-center gap-4">
         <button
-          @click="router.back()"
           class="px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+          @click="router.back()"
         >
           Go Back
         </button>

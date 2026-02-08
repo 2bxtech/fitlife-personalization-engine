@@ -113,9 +113,9 @@ onMounted(() => {
     </div>
 
     <button 
-      @click="handleBook"
       :disabled="classData.currentEnrollment >= classData.capacity"
       class="w-full px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+      @click="handleBook"
     >
       {{ classData.currentEnrollment >= classData.capacity ? 'Class Full' : 'Book Now' }}
     </button>

@@ -29,9 +29,9 @@ const typeIcons: Record<string, string> = {
       <span class="text-xl font-bold flex-shrink-0">{{ typeIcons[toast.type] }}</span>
       <p class="flex-1 text-sm font-medium">{{ toast.message }}</p>
       <button
-        @click="removeToast(toast.id)"
         class="text-gray-500 hover:text-gray-700 flex-shrink-0 ml-2"
         aria-label="Close"
+        @click="removeToast(toast.id)"
       >
         ✕
       </button>

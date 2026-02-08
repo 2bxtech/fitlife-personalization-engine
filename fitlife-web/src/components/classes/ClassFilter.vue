@@ -61,10 +61,10 @@ function clearFilters() {
     </div>
 
     <div class="flex space-x-4">
-      <button @click="applyFilters" class="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors">
+      <button class="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors" @click="applyFilters">
         Apply Filters
       </button>
-      <button @click="clearFilters" class="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors">
+      <button class="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors" @click="clearFilters">
         Clear
       </button>
     </div>
