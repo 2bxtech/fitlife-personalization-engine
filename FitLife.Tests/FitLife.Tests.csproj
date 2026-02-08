@@ -10,6 +10,8 @@
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.4" />
     <PackageReference Include="FluentAssertions" Version="6.12.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.12" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.6" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="Moq" Version="4.20.70" />
     <PackageReference Include="xunit" Version="2.9.3" />
@@ -22,6 +24,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\FitLife.Core\FitLife.Core.csproj" />
+    <ProjectReference Include="..\FitLife.Api\FitLife.Api.csproj" />
+    <ProjectReference Include="..\FitLife.Infrastructure\FitLife.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

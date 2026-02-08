@@ -287,3 +287,6 @@ lifetime.ApplicationStopping.Register(() =>
 });
 
 app.Run();
+
+// Make Program class accessible for WebApplicationFactory in integration tests
+public partial class Program { }
