@@ -165,7 +165,6 @@ jobs:
       run: |
         kubectl apply -f k8s/namespace.yaml
         kubectl apply -f k8s/configmap.yaml -n fitlife-staging
-        kubectl apply -f k8s/secrets.yaml -n fitlife-staging
         
         # Update image tags
         kubectl set image deployment/fitlife-api api=${{ env.ACR_REGISTRY }}/${{ env.API_IMAGE_NAME }}:development-${{ github.sha }} -n fitlife-staging
@@ -174,6 +173,11 @@ jobs:
         # Wait for rollout
         kubectl rollout status deployment/fitlife-api -n fitlife-staging --timeout=5m
         kubectl rollout status deployment/fitlife-web -n fitlife-staging --timeout=5m
+
+    - name: Run database migrations
+      run: |
+        kubectl exec deployment/fitlife-api -n fitlife-staging -- \
+          dotnet ef database update --no-build
 
   deploy-production:
     name: Deploy to Production (Main Branch)
@@ -203,7 +207,6 @@ jobs:
       run: |
         kubectl apply -f k8s/namespace.yaml
         kubectl apply -f k8s/configmap.yaml
-        kubectl apply -f k8s/secrets.yaml
         kubectl apply -f k8s/api-deployment.yaml
         kubectl apply -f k8s/web-deployment.yaml
         kubectl apply -f k8s/ingress.yaml
@@ -216,6 +219,11 @@ jobs:
         # Wait for rollout
         kubectl rollout status deployment/fitlife-api -n fitlife --timeout=10m
         kubectl rollout status deployment/fitlife-web -n fitlife --timeout=10m
+
+    - name: Run database migrations
+      run: |
+        kubectl exec deployment/fitlife-api -n fitlife -- \
+          dotnet ef database update --no-build
 
     - name: Run smoke tests
       run: |
