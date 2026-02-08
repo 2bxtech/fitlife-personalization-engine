@@ -61,16 +61,20 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 // Configure Entity Framework Core with SQL Server
-builder.Services.AddDbContext<FitLifeDbContext>(options =>
-    options.UseSqlServer(
-        builder.Configuration.GetConnectionString("DefaultConnection"),
-        sqlOptions => sqlOptions.EnableRetryOnFailure(
-            maxRetryCount: 3,
-            maxRetryDelay: TimeSpan.FromSeconds(5),
-            errorNumbersToAdd: null
+// Skip registration in Testing environment — tests register InMemory provider instead
+if (!builder.Environment.IsEnvironment("Testing"))
+{
+    builder.Services.AddDbContext<FitLifeDbContext>(options =>
+        options.UseSqlServer(
+            builder.Configuration.GetConnectionString("DefaultConnection"),
+            sqlOptions => sqlOptions.EnableRetryOnFailure(
+                maxRetryCount: 3,
+                maxRetryDelay: TimeSpan.FromSeconds(5),
+                errorNumbersToAdd: null
+            )
         )
-    )
-);
+    );
+}
 
 // Register repositories
 builder.Services.AddScoped<IUserRepository, UserRepository>();
