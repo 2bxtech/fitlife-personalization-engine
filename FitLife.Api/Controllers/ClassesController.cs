@@ -1,7 +1,10 @@
-using FitLife.Api.DTOs;
+using FitLife.Core.DTOs;
 using FitLife.Core.Interfaces;
 using FitLife.Core.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
+using System.Text.Json;
 
 namespace FitLife.Api.Controllers;
 
@@ -10,20 +13,31 @@ namespace FitLife.Api.Controllers;
 public class ClassesController : ControllerBase
 {
     private readonly IClassRepository _classRepository;
+    private readonly IInteractionRepository _interactionRepository;
+    private readonly ICacheService _cacheService;
     private readonly ILogger<ClassesController> _logger;
 
-    public ClassesController(IClassRepository classRepository, ILogger<ClassesController> logger)
+    public ClassesController(
+        IClassRepository classRepository,
+        IInteractionRepository interactionRepository,
+        ICacheService cacheService,
+        ILogger<ClassesController> logger)
     {
         _classRepository = classRepository;
+        _interactionRepository = interactionRepository;
+        _cacheService = cacheService;
         _logger = logger;
     }
 
     /// <summary>
-    /// Get all upcoming classes
+    /// Get all upcoming classes with optional filters
     /// </summary>
     [HttpGet]
+    [AllowAnonymous]
     public async Task<ActionResult<ApiResponse<IEnumerable<ClassDto>>>> GetClasses(
         [FromQuery] string? type = null,
+        [FromQuery] string? level = null,
+        [FromQuery] DateTime? startDate = null,
         [FromQuery] int limit = 50)
     {
         try
@@ -39,7 +53,14 @@ public class ClassesController : ControllerBase
                 classes = await _classRepository.GetUpcomingClassesAsync(limit);
             }
 
-            var classDtos = classes.Select(MapToDto);
+            // Apply additional filters
+            if (!string.IsNullOrEmpty(level))
+                classes = classes.Where(c => c.Level.Equals(level, StringComparison.OrdinalIgnoreCase));
+
+            if (startDate.HasValue)
+                classes = classes.Where(c => c.StartTime.Date >= startDate.Value.Date);
+
+            var classDtos = classes.Take(limit).Select(DtoMappers.MapToClassDto);
 
             return Ok(new ApiResponse<IEnumerable<ClassDto>>
             {
@@ -62,6 +83,7 @@ public class ClassesController : ControllerBase
     /// Get class by ID
     /// </summary>
     [HttpGet("{id}")]
+    [AllowAnonymous]
     public async Task<ActionResult<ApiResponse<ClassDto>>> GetClass(string id)
     {
         try
@@ -77,11 +99,10 @@ public class ClassesController : ControllerBase
                 });
             }
 
-            var classDto = MapToDto(classEntity);
             return Ok(new ApiResponse<ClassDto>
             {
                 Success = true,
-                Data = classDto
+                Data = DtoMappers.MapToClassDto(classEntity)
             });
         }
         catch (Exception ex)
@@ -99,13 +120,14 @@ public class ClassesController : ControllerBase
     /// Get popular classes
     /// </summary>
     [HttpGet("popular")]
+    [AllowAnonymous]
     public async Task<ActionResult<ApiResponse<IEnumerable<ClassDto>>>> GetPopularClasses(
         [FromQuery] int limit = 20)
     {
         try
         {
             var classes = await _classRepository.GetPopularClassesAsync(limit);
-            var classDtos = classes.Select(MapToDto);
+            var classDtos = classes.Select(DtoMappers.MapToClassDto);
 
             return Ok(new ApiResponse<IEnumerable<ClassDto>>
             {
@@ -125,9 +147,74 @@ public class ClassesController : ControllerBase
     }
 
     /// <summary>
-    /// Create a new class
+    /// Book a class for the authenticated user
+    /// </summary>
+    [HttpPost("{id}/book")]
+    [Authorize]
+    public async Task<ActionResult<ApiResponse<ClassDto>>> BookClass(string id)
+    {
+        try
+        {
+            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                         ?? User.FindFirst("sub")?.Value;
+            if (string.IsNullOrEmpty(userId))
+                return Unauthorized(new ApiResponse<ClassDto> { Success = false, Message = "User not authenticated" });
+
+            var classEntity = await _classRepository.GetByIdAsync(id);
+            if (classEntity == null)
+                return NotFound(new ApiResponse<ClassDto> { Success = false, Message = "Class not found" });
+
+            if (classEntity.CurrentEnrollment >= classEntity.Capacity)
+                return BadRequest(new ApiResponse<ClassDto> { Success = false, Message = "Class is full" });
+
+            // Increment enrollment
+            classEntity.CurrentEnrollment++;
+            classEntity.UpdatedAt = DateTime.UtcNow;
+            await _classRepository.UpdateAsync(classEntity);
+            await _classRepository.SaveChangesAsync();
+
+            // Create booking interaction record
+            var interaction = new Interaction
+            {
+                UserId = userId,
+                ItemId = id,
+                ItemType = "Class",
+                EventType = "Book",
+                Timestamp = DateTime.UtcNow,
+                Metadata = JsonSerializer.Serialize(new { source = "web", className = classEntity.Name })
+            };
+            await _interactionRepository.AddAsync(interaction);
+            await _interactionRepository.SaveChangesAsync();
+
+            // Invalidate recommendation cache
+            await _cacheService.DeleteAsync($"rec:{userId}");
+
+            _logger.LogInformation("User {UserId} booked class {ClassId}: {ClassName}",
+                userId, id, classEntity.Name);
+
+            return Ok(new ApiResponse<ClassDto>
+            {
+                Success = true,
+                Data = DtoMappers.MapToClassDto(classEntity),
+                Message = "Class booked successfully"
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error booking class {ClassId}", id);
+            return StatusCode(500, new ApiResponse<ClassDto>
+            {
+                Success = false,
+                Message = "Failed to book class"
+            });
+        }
+    }
+
+    /// <summary>
+    /// Create a new class (requires authentication)
     /// </summary>
     [HttpPost]
+    [Authorize]
     public async Task<ActionResult<ApiResponse<ClassDto>>> CreateClass([FromBody] CreateClassDto dto)
     {
         try
@@ -150,11 +237,10 @@ public class ClassesController : ControllerBase
 
             _logger.LogInformation("Created class {ClassId}: {ClassName}", classEntity.Id, classEntity.Name);
 
-            var classDto = MapToDto(classEntity);
             return CreatedAtAction(nameof(GetClass), new { id = classEntity.Id }, new ApiResponse<ClassDto>
             {
                 Success = true,
-                Data = classDto,
+                Data = DtoMappers.MapToClassDto(classEntity),
                 Message = "Class created successfully"
             });
         }
@@ -170,9 +256,10 @@ public class ClassesController : ControllerBase
     }
 
     /// <summary>
-    /// Update a class
+    /// Update a class (requires authentication)
     /// </summary>
     [HttpPut("{id}")]
+    [Authorize]
     public async Task<ActionResult<ApiResponse<ClassDto>>> UpdateClass(
         string id,
         [FromBody] UpdateClassDto dto)
@@ -213,11 +300,10 @@ public class ClassesController : ControllerBase
 
             _logger.LogInformation("Updated class {ClassId}", id);
 
-            var classDto = MapToDto(classEntity);
             return Ok(new ApiResponse<ClassDto>
             {
                 Success = true,
-                Data = classDto,
+                Data = DtoMappers.MapToClassDto(classEntity),
                 Message = "Class updated successfully"
             });
         }
@@ -233,9 +319,10 @@ public class ClassesController : ControllerBase
     }
 
     /// <summary>
-    /// Delete a class
+    /// Delete a class (requires authentication)
     /// </summary>
     [HttpDelete("{id}")]
+    [Authorize]
     public async Task<ActionResult<ApiResponse<object>>> DeleteClass(string id)
     {
         try
@@ -271,27 +358,5 @@ public class ClassesController : ControllerBase
                 Message = "Failed to delete class"
             });
         }
-    }
-
-    private static ClassDto MapToDto(Class classEntity)
-    {
-        return new ClassDto
-        {
-            Id = classEntity.Id,
-            Name = classEntity.Name,
-            Type = classEntity.Type,
-            Description = classEntity.Description,
-            InstructorId = classEntity.InstructorId,
-            InstructorName = classEntity.InstructorName,
-            Level = classEntity.Level,
-            StartTime = classEntity.StartTime,
-            DurationMinutes = classEntity.DurationMinutes,
-            Capacity = classEntity.Capacity,
-            CurrentEnrollment = classEntity.CurrentEnrollment,
-            AverageRating = classEntity.AverageRating,
-            TotalRatings = classEntity.TotalRatings,
-            WeeklyBookings = classEntity.WeeklyBookings,
-            IsActive = classEntity.IsActive
-        };
     }
 }

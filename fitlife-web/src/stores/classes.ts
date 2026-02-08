@@ -8,21 +8,12 @@ export const useClassStore = defineStore('classes', () => {
   const currentClass = ref<Class | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
-  const total = ref(0)
-  const currentPage = ref(1)
-  const pageSize = ref(20)
 
   async function fetchClasses(filters?: ClassFilter) {
     loading.value = true
     error.value = null
     try {
-      const result = await classService.getClasses({
-        ...filters,
-        page: currentPage.value,
-        pageSize: pageSize.value,
-      })
-      classes.value = result.data
-      total.value = result.total
+      classes.value = await classService.getClasses(filters)
     } catch (e: any) {
       error.value = e.message || 'Failed to fetch classes'
       throw e
@@ -55,21 +46,13 @@ export const useClassStore = defineStore('classes', () => {
     }
   }
 
-  function setPage(page: number) {
-    currentPage.value = page
-  }
-
   return {
     classes,
     currentClass,
     loading,
     error,
-    total,
-    currentPage,
-    pageSize,
     fetchClasses,
     fetchClassById,
     bookClass,
-    setPage,
   }
 })

@@ -8,23 +8,23 @@ const emit = defineEmits<{
 
 const filters = ref<ClassFilter>({
   type: '',
-  difficulty: '',
+  level: '',
   startDate: '',
 })
 
 const classTypes = ['Yoga', 'Spin', 'HIIT', 'Strength', 'Pilates', 'Boxing', 'Cardio']
-const difficulties = ['Beginner', 'Intermediate', 'Advanced']
+const levels = ['Beginner', 'Intermediate', 'Advanced']
 
 function applyFilters() {
   const activeFilters: ClassFilter = {}
   if (filters.value.type) activeFilters.type = filters.value.type
-  if (filters.value.difficulty) activeFilters.difficulty = filters.value.difficulty
+  if (filters.value.level) activeFilters.level = filters.value.level
   if (filters.value.startDate) activeFilters.startDate = filters.value.startDate
   emit('filter', activeFilters)
 }
 
 function clearFilters() {
-  filters.value = { type: '', difficulty: '', startDate: '' }
+  filters.value = { type: '', level: '', startDate: '' }
   emit('filter', {})
 }
 </script>
@@ -43,10 +43,10 @@ function clearFilters() {
       </div>
 
       <div>
-        <label class="block text-sm font-medium text-gray-700 mb-2">Difficulty</label>
-        <select v-model="filters.difficulty" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500">
+        <label class="block text-sm font-medium text-gray-700 mb-2">Level</label>
+        <select v-model="filters.level" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500">
           <option value="">All Levels</option>
-          <option v-for="diff in difficulties" :key="diff" :value="diff">{{ diff }}</option>
+          <option v-for="lvl in levels" :key="lvl" :value="lvl">{{ lvl }}</option>
         </select>
       </div>
 
@@ -61,10 +61,10 @@ function clearFilters() {
     </div>
 
     <div class="flex space-x-4">
-      <button @click="applyFilters" class="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors">
+      <button class="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors" @click="applyFilters">
         Apply Filters
       </button>
-      <button @click="clearFilters" class="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors">
+      <button class="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors" @click="clearFilters">
         Clear
       </button>
     </div>

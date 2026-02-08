@@ -1,33 +1,29 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
 import { useClassStore } from '@/stores/classes'
+import { useToast } from '@/composables/useToast'
 import ClassFilter from '@/components/classes/ClassFilter.vue'
 import ClassList from '@/components/classes/ClassList.vue'
 import type { ClassFilter as ClassFilterType } from '@/types/Class'
 
 const classStore = useClassStore()
+const toast = useToast()
 
 onMounted(async () => {
   await classStore.fetchClasses()
 })
 
 async function handleFilter(filters: ClassFilterType) {
-  classStore.setPage(1)
   await classStore.fetchClasses(filters)
 }
 
 async function handleBook(classId: string) {
   try {
     await classStore.bookClass(classId)
-    alert('Class booked successfully!')
+    toast.success('Class booked successfully!')
   } catch (error: any) {
-    alert(error.message || 'Failed to book class')
+    toast.error(error.message || 'Failed to book class')
   }
-}
-
-async function handlePageChange(page: number) {
-  classStore.setPage(page)
-  await classStore.fetchClasses()
 }
 </script>
 
@@ -52,25 +48,6 @@ async function handlePageChange(page: number) {
         :loading="classStore.loading"
         @book="handleBook"
       />
-
-      <!-- Pagination -->
-      <div v-if="!classStore.loading && classStore.total > classStore.pageSize" class="mt-8 flex justify-center">
-        <div class="flex space-x-2">
-          <button
-            v-for="page in Math.ceil(classStore.total / classStore.pageSize)"
-            :key="page"
-            @click="handlePageChange(page)"
-            :class="[
-              'px-4 py-2 rounded-lg transition-colors',
-              page === classStore.currentPage
-                ? 'bg-primary-600 text-white'
-                : 'bg-white text-gray-700 hover:bg-gray-100'
-            ]"
-          >
-            {{ page }}
-          </button>
-        </div>
-      </div>
     </div>
   </div>
 </template>

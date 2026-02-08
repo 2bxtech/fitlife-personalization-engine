@@ -44,7 +44,15 @@ public class RecommendationGeneratorService : BackgroundService
             intervalMinutes, batchSize);
 
         // Wait a bit before first run to let other services initialize
-        await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("RecommendationGeneratorService cancelled during startup delay");
+            return;
+        }
 
         while (!stoppingToken.IsCancellationRequested)
         {

@@ -1,4 +1,4 @@
-using FitLife.Api.DTOs;
+using FitLife.Core.DTOs;
 using FitLife.Core.Models;
 using FitLife.Infrastructure.Kafka;
 using Microsoft.AspNetCore.Authorization;

@@ -1,32 +1,45 @@
-using FitLife.Api.DTOs;
+using FitLife.Core.DTOs;
 using FitLife.Core.Interfaces;
 using FitLife.Core.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 using System.Text.Json;
 
 namespace FitLife.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class UsersController : ControllerBase
 {
     private readonly IUserRepository _userRepository;
+    private readonly ICacheService _cacheService;
     private readonly ILogger<UsersController> _logger;
 
-    public UsersController(IUserRepository userRepository, ILogger<UsersController> logger)
+    public UsersController(
+        IUserRepository userRepository,
+        ICacheService cacheService,
+        ILogger<UsersController> logger)
     {
         _userRepository = userRepository;
+        _cacheService = cacheService;
         _logger = logger;
     }
 
     /// <summary>
-    /// Get user by ID
+    /// Get user by ID (must match authenticated user)
     /// </summary>
     [HttpGet("{id}")]
     public async Task<ActionResult<ApiResponse<UserDto>>> GetUser(string id)
     {
         try
         {
+            var tokenUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                              ?? User.FindFirst("sub")?.Value;
+            if (tokenUserId != id)
+                return Forbid();
+
             var user = await _userRepository.GetByIdAsync(id);
             
             if (user == null)
@@ -38,11 +51,10 @@ public class UsersController : ControllerBase
                 });
             }
 
-            var userDto = MapToDto(user);
             return Ok(new ApiResponse<UserDto>
             {
                 Success = true,
-                Data = userDto
+                Data = DtoMappers.MapToUserDto(user)
             });
         }
         catch (Exception ex)
@@ -57,44 +69,7 @@ public class UsersController : ControllerBase
     }
 
     /// <summary>
-    /// Get user by email
-    /// </summary>
-    [HttpGet("by-email/{email}")]
-    public async Task<ActionResult<ApiResponse<UserDto>>> GetUserByEmail(string email)
-    {
-        try
-        {
-            var user = await _userRepository.GetByEmailAsync(email);
-            
-            if (user == null)
-            {
-                return NotFound(new ApiResponse<UserDto>
-                {
-                    Success = false,
-                    Message = "User not found"
-                });
-            }
-
-            var userDto = MapToDto(user);
-            return Ok(new ApiResponse<UserDto>
-            {
-                Success = true,
-                Data = userDto
-            });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error getting user by email {Email}", email);
-            return StatusCode(500, new ApiResponse<UserDto>
-            {
-                Success = false,
-                Message = "Failed to retrieve user"
-            });
-        }
-    }
-
-    /// <summary>
-    /// Update user preferences
+    /// Update user preferences (must match authenticated user)
     /// </summary>
     [HttpPut("{id}/preferences")]
     public async Task<ActionResult<ApiResponse<UserDto>>> UpdatePreferences(
@@ -103,6 +78,11 @@ public class UsersController : ControllerBase
     {
         try
         {
+            var tokenUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                              ?? User.FindFirst("sub")?.Value;
+            if (tokenUserId != id)
+                return Forbid();
+
             var user = await _userRepository.GetByIdAsync(id);
             
             if (user == null)
@@ -129,13 +109,15 @@ public class UsersController : ControllerBase
             await _userRepository.UpdateAsync(user);
             await _userRepository.SaveChangesAsync();
 
+            // Invalidate recommendation cache after preference update
+            await _cacheService.DeleteAsync($"rec:{id}");
+
             _logger.LogInformation("Updated preferences for user {UserId}", id);
 
-            var userDto = MapToDto(user);
             return Ok(new ApiResponse<UserDto>
             {
                 Success = true,
-                Data = userDto,
+                Data = DtoMappers.MapToUserDto(user),
                 Message = "Preferences updated successfully"
             });
         }
@@ -151,13 +133,18 @@ public class UsersController : ControllerBase
     }
 
     /// <summary>
-    /// Delete user
+    /// Delete user (must match authenticated user)
     /// </summary>
     [HttpDelete("{id}")]
     public async Task<ActionResult<ApiResponse<object>>> DeleteUser(string id)
     {
         try
         {
+            var tokenUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                              ?? User.FindFirst("sub")?.Value;
+            if (tokenUserId != id)
+                return Forbid();
+
             var user = await _userRepository.GetByIdAsync(id);
             
             if (user == null)
@@ -171,6 +158,9 @@ public class UsersController : ControllerBase
 
             await _userRepository.DeleteAsync(user);
             await _userRepository.SaveChangesAsync();
+
+            // Clean up cache
+            await _cacheService.DeleteAsync($"rec:{id}");
 
             _logger.LogInformation("Deleted user {UserId}", id);
 
@@ -189,22 +179,5 @@ public class UsersController : ControllerBase
                 Message = "Failed to delete user"
             });
         }
-    }
-
-    private static UserDto MapToDto(User user)
-    {
-        return new UserDto
-        {
-            Id = user.Id,
-            Email = user.Email,
-            FirstName = user.FirstName,
-            LastName = user.LastName,
-            FitnessLevel = user.FitnessLevel,
-            Goals = JsonSerializer.Deserialize<List<string>>(user.Goals) ?? new(),
-            PreferredClassTypes = JsonSerializer.Deserialize<List<string>>(user.PreferredClassTypes) ?? new(),
-            Segment = user.Segment,
-            CreatedAt = user.CreatedAt,
-            UpdatedAt = user.UpdatedAt
-        };
     }
 }

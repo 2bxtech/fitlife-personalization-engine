@@ -1,26 +1,26 @@
 export interface Class {
   id: string
   name: string
-  description: string
   type: string
+  description: string
   instructorId: string
   instructorName: string
-  difficulty: string
+  level: string
   startTime: string
-  endTime: string
+  durationMinutes: number
   capacity: number
   currentEnrollment: number
+  availableSpots: number
   averageRating: number
-  location: string
+  totalRatings: number
+  weeklyBookings: number
   isActive: boolean
 }
 
 export interface ClassFilter {
   type?: string
-  difficulty?: string
-  instructorId?: string
+  level?: string
   startDate?: string
-  endDate?: string
   page?: number
   pageSize?: number
 }

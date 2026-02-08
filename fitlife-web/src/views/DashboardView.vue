@@ -2,10 +2,12 @@
 import { onMounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useClassStore } from '@/stores/classes'
+import { useToast } from '@/composables/useToast'
 import RecommendationFeed from '@/components/recommendations/RecommendationFeed.vue'
 
 const authStore = useAuthStore()
 const classStore = useClassStore()
+const toast = useToast()
 
 onMounted(async () => {
   // Recommendations are fetched by RecommendationFeed component
@@ -14,9 +16,9 @@ onMounted(async () => {
 async function handleBook(classId: string) {
   try {
     await classStore.bookClass(classId)
-    alert('Class booked successfully!')
+    toast.success('Class booked successfully!')
   } catch (error: any) {
-    alert(error.message || 'Failed to book class')
+    toast.error(error.message || 'Failed to book class')
   }
 }
 </script>

@@ -48,29 +48,28 @@ public class RecommendationsController : ControllerBase
 
             if (limit < 1 || limit > 50)
             {
-                return BadRequest(new
+                return BadRequest(new ApiResponse<object>
                 {
-                    success = false,
-                    error = "Limit must be between 1 and 50"
+                    Success = false,
+                    Message = "Limit must be between 1 and 50"
                 });
             }
 
             var recommendations = await _recommendationService.GetRecommendationsAsync(userId, limit);
 
-            return Ok(new
+            return Ok(new ApiResponse<List<RecommendationDto>>
             {
-                success = true,
-                data = recommendations,
-                count = recommendations.Count
+                Success = true,
+                Data = recommendations
             });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting recommendations for user {UserId}", userId);
-            return StatusCode(500, new
+            return StatusCode(500, new ApiResponse<object>
             {
-                success = false,
-                error = "Failed to retrieve recommendations"
+                Success = false,
+                Message = "Failed to retrieve recommendations"
             });
         }
     }
@@ -110,21 +109,20 @@ public class RecommendationsController : ControllerBase
 
             var recommendations = await _recommendationService.RefreshRecommendationsAsync(userId, limit);
 
-            return Ok(new
+            return Ok(new ApiResponse<List<RecommendationDto>>
             {
-                success = true,
-                data = recommendations,
-                count = recommendations.Count,
-                message = "Recommendations refreshed successfully"
+                Success = true,
+                Data = recommendations,
+                Message = "Recommendations refreshed successfully"
             });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error refreshing recommendations for user {UserId}", userId);
-            return StatusCode(500, new
+            return StatusCode(500, new ApiResponse<object>
             {
-                success = false,
-                error = "Failed to refresh recommendations"
+                Success = false,
+                Message = "Failed to refresh recommendations"
             });
         }
     }

@@ -12,8 +12,7 @@ namespace FitLife.Infrastructure.Cache;
 /// </summary>
 public class RedisCacheService : ICacheService, IDisposable
 {
-    private readonly IConnectionMultiplexer _redis;
-    private readonly IDatabase _db;
+    private readonly Lazy<ConnectionMultiplexer> _lazyConnection;
     private readonly ILogger<RedisCacheService> _logger;
     private bool _disposed = false;
 
@@ -24,43 +23,50 @@ public class RedisCacheService : ICacheService, IDisposable
         var connectionString = configuration["Redis:ConnectionString"]
             ?? throw new InvalidOperationException("Redis:ConnectionString not configured");
 
-        try
+        _lazyConnection = new Lazy<ConnectionMultiplexer>(() =>
         {
-            var options = ConfigurationOptions.Parse(connectionString);
-            options.AbortOnConnectFail = false; // Retry connection failures
-            options.ConnectTimeout = 5000;
-            options.SyncTimeout = 5000;
-            options.AsyncTimeout = 5000;
-            options.ConnectRetry = 3;
-            
-            _redis = ConnectionMultiplexer.Connect(options);
-            _db = _redis.GetDatabase();
-
-            _redis.ConnectionFailed += (sender, args) =>
+            try
             {
-                _logger.LogError("Redis connection failed: {FailureType} - {Exception}",
-                    args.FailureType, args.Exception?.Message);
-            };
+                var options = ConfigurationOptions.Parse(connectionString);
+                options.AbortOnConnectFail = false;
+                options.ConnectTimeout = 5000;
+                options.SyncTimeout = 5000;
+                options.AsyncTimeout = 5000;
+                options.ConnectRetry = 3;
 
-            _redis.ConnectionRestored += (sender, args) =>
+                var connection = ConnectionMultiplexer.Connect(options);
+
+                connection.ConnectionFailed += (sender, args) =>
+                {
+                    _logger.LogError("Redis connection failed: {FailureType} - {Exception}",
+                        args.FailureType, args.Exception?.Message);
+                };
+
+                connection.ConnectionRestored += (sender, args) =>
+                {
+                    _logger.LogInformation("Redis connection restored");
+                };
+
+                _logger.LogInformation("Redis cache service connected to: {Connection}", connectionString);
+                return connection;
+            }
+            catch (Exception ex)
             {
-                _logger.LogInformation("Redis connection restored");
-            };
+                _logger.LogError(ex, "Failed to connect to Redis");
+                throw;
+            }
+        });
 
-            _logger.LogInformation("Redis cache service initialized with connection: {Connection}",
-                connectionString);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to connect to Redis");
-            throw;
-        }
+        _logger.LogInformation("Redis cache service initialized (lazy connection) for: {Connection}",
+            connectionString);
     }
+
+    private IDatabase Database => _lazyConnection.Value.GetDatabase();
 
     /// <summary>
     /// Check if Redis is connected and healthy
     /// </summary>
-    public bool IsConnected => _redis?.IsConnected ?? false;
+    public bool IsConnected => _lazyConnection.IsValueCreated && _lazyConnection.Value.IsConnected;
 
     /// <summary>
     /// Get a value from cache by key
@@ -72,7 +78,7 @@ public class RedisCacheService : ICacheService, IDisposable
     {
         try
         {
-            var value = await _db.StringGetAsync(key);
+            var value = await Database.StringGetAsync(key);
             
             if (value.IsNullOrEmpty)
             {
@@ -97,7 +103,7 @@ public class RedisCacheService : ICacheService, IDisposable
     {
         try
         {
-            var value = await _db.StringGetAsync(key);
+            var value = await Database.StringGetAsync(key);
             return value.IsNullOrEmpty ? null : value.ToString();
         }
         catch (Exception ex)
@@ -122,7 +128,7 @@ public class RedisCacheService : ICacheService, IDisposable
             var ttl = expiration ?? TimeSpan.FromMinutes(10);
             var json = JsonSerializer.Serialize(value);
             
-            var success = await _db.StringSetAsync(key, json, ttl);
+            var success = await Database.StringSetAsync(key, json, ttl);
             
             if (success)
             {
@@ -150,7 +156,7 @@ public class RedisCacheService : ICacheService, IDisposable
         try
         {
             var ttl = expiration ?? TimeSpan.FromMinutes(10);
-            return await _db.StringSetAsync(key, value, ttl);
+            return await Database.StringSetAsync(key, value, ttl);
         }
         catch (Exception ex)
         {
@@ -167,7 +173,7 @@ public class RedisCacheService : ICacheService, IDisposable
     {
         try
         {
-            var deleted = await _db.KeyDeleteAsync(key);
+            var deleted = await Database.KeyDeleteAsync(key);
             
             if (deleted)
             {
@@ -195,7 +201,7 @@ public class RedisCacheService : ICacheService, IDisposable
     {
         try
         {
-            var server = _redis.GetServer(_redis.GetEndPoints().First());
+            var server = _lazyConnection.Value.GetServer(_lazyConnection.Value.GetEndPoints().First());
             var keys = server.Keys(pattern: pattern).ToArray();
             
             if (keys.Length == 0)
@@ -204,7 +210,7 @@ public class RedisCacheService : ICacheService, IDisposable
                 return 0;
             }
 
-            var deleted = await _db.KeyDeleteAsync(keys);
+            var deleted = await Database.KeyDeleteAsync(keys);
             _logger.LogInformation("Deleted {Count} keys matching pattern: {Pattern}", deleted, pattern);
             
             return (int)deleted;
@@ -223,7 +229,7 @@ public class RedisCacheService : ICacheService, IDisposable
     {
         try
         {
-            return await _db.KeyExistsAsync(key);
+            return await Database.KeyExistsAsync(key);
         }
         catch (Exception ex)
         {
@@ -239,7 +245,7 @@ public class RedisCacheService : ICacheService, IDisposable
     {
         try
         {
-            return await _db.KeyTimeToLiveAsync(key);
+            return await Database.KeyTimeToLiveAsync(key);
         }
         catch (Exception ex)
         {
@@ -255,12 +261,12 @@ public class RedisCacheService : ICacheService, IDisposable
     {
         try
         {
-            var result = await _db.StringIncrementAsync(key, value);
+            var result = await Database.StringIncrementAsync(key, value);
             
             // Set expiration if this is the first increment
             if (result == value && expiration.HasValue)
             {
-                await _db.KeyExpireAsync(key, expiration.Value);
+                await Database.KeyExpireAsync(key, expiration.Value);
             }
 
             return result;
@@ -279,7 +285,7 @@ public class RedisCacheService : ICacheService, IDisposable
     {
         try
         {
-            return await _db.SortedSetAddAsync(key, member, score);
+            return await Database.SortedSetAddAsync(key, member, score);
         }
         catch (Exception ex)
         {
@@ -295,7 +301,7 @@ public class RedisCacheService : ICacheService, IDisposable
     {
         try
         {
-            var values = await _db.SortedSetRangeByRankAsync(key, start, stop, Order.Descending);
+            var values = await Database.SortedSetRangeByRankAsync(key, start, stop, Order.Descending);
             return values.Select(v => v.ToString()).ToList();
         }
         catch (Exception ex)
@@ -312,7 +318,7 @@ public class RedisCacheService : ICacheService, IDisposable
     {
         try
         {
-            return await _db.PingAsync();
+            return await Database.PingAsync();
         }
         catch (Exception ex)
         {
@@ -327,7 +333,8 @@ public class RedisCacheService : ICacheService, IDisposable
 
         try
         {
-            _redis?.Dispose();
+            if (_lazyConnection.IsValueCreated)
+                _lazyConnection.Value.Dispose();
             _logger.LogInformation("Redis cache service disposed");
         }
         catch (Exception ex)

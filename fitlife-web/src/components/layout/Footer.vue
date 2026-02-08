@@ -16,11 +16,10 @@
           </ul>
         </div>
         <div>
-          <h4 class="font-semibold mb-4">Support</h4>
-          <ul class="space-y-2 text-gray-400">
-            <li><a href="#" class="hover:text-white">Help Center</a></li>
-            <li><a href="#" class="hover:text-white">Contact Us</a></li>
-          </ul>
+          <h4 class="font-semibold mb-4">About</h4>
+          <p class="text-gray-400 text-sm">
+            Built with .NET 8, Vue 3, Kafka, and Redis for intelligent class recommendations.
+          </p>
         </div>
       </div>
       <div class="border-t border-gray-700 mt-8 pt-6 text-center text-gray-400">
