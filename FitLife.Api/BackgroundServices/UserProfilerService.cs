@@ -176,25 +176,20 @@ public class UserProfilerService : BackgroundService
         }
 
         // Analyze class type distribution
+        var classIds = completedClasses.Select(i => i.ItemId).Distinct().ToList();
+        var classes = await classRepository.GetByIdsAsync(classIds);
+        var classLookup = classes.ToDictionary(c => c.Id);
         var classTypeCounts = new Dictionary<string, int>();
 
         foreach (var interaction in completedClasses)
         {
-            try
+            if (classLookup.TryGetValue(interaction.ItemId, out var classItem))
             {
-                var classItem = await classRepository.GetByIdAsync(interaction.ItemId);
-                if (classItem != null)
+                if (!classTypeCounts.ContainsKey(classItem.Type))
                 {
-                    if (!classTypeCounts.ContainsKey(classItem.Type))
-                    {
-                        classTypeCounts[classItem.Type] = 0;
-                    }
-                    classTypeCounts[classItem.Type]++;
+                    classTypeCounts[classItem.Type] = 0;
                 }
-            }
-            catch
-            {
-                // Skip if class not found
+                classTypeCounts[classItem.Type]++;
             }
         }
 

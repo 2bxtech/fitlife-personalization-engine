@@ -26,4 +26,9 @@ public interface IClassRepository : IRepository<Class>
     /// Get popular classes (sorted by weekly bookings)
     /// </summary>
     Task<IEnumerable<Class>> GetPopularClassesAsync(int limit = 20);
+
+    /// <summary>
+    /// Get multiple classes by their IDs (batch loading to avoid N+1 queries)
+    /// </summary>
+    Task<IEnumerable<Class>> GetByIdsAsync(IEnumerable<string> ids);
 }

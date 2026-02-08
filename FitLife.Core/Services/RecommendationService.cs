@@ -161,7 +161,7 @@ public class RecommendationService : IRecommendationService
                     Rank = i + 1,
                     Score = Math.Round(score, 2),
                     Reason = reason,
-                    Class = MapToClassDto(classItem),
+                    Class = DtoMappers.MapToClassDto(classItem),
                     GeneratedAt = DateTime.UtcNow
                 });
             }
@@ -277,22 +277,26 @@ public class RecommendationService : IRecommendationService
 
     /// <summary>
     /// Converts database recommendation entities to DTOs with class details
+    /// Uses batch loading to avoid N+1 queries
     /// </summary>
     private async Task<List<RecommendationDto>> ConvertToDtos(List<Recommendation> recommendations)
     {
+        var classIds = recommendations.Select(r => r.ItemId).Distinct().ToList();
+        var classes = await _classRepository.GetByIdsAsync(classIds);
+        var classLookup = classes.ToDictionary(c => c.Id);
+
         var dtos = new List<RecommendationDto>();
 
         foreach (var rec in recommendations)
         {
-            var classItem = await _classRepository.GetByIdAsync(rec.ItemId);
-            if (classItem != null)
+            if (classLookup.TryGetValue(rec.ItemId, out var classItem))
             {
                 dtos.Add(new RecommendationDto
                 {
                     Rank = rec.Rank,
                     Score = (double)rec.Score,
                     Reason = rec.Reason,
-                    Class = MapToClassDto(classItem),
+                    Class = DtoMappers.MapToClassDto(classItem),
                     GeneratedAt = rec.GeneratedAt
                 });
             }
@@ -316,33 +320,8 @@ public class RecommendationService : IRecommendationService
             Rank = index + 1,
             Score = 50.0, // Default score for fallback
             Reason = "Popular class this week",
-            Class = MapToClassDto(c),
+            Class = DtoMappers.MapToClassDto(c),
             GeneratedAt = DateTime.UtcNow
         }).ToList();
-    }
-
-    /// <summary>
-    /// Maps a Class entity to ClassDto
-    /// </summary>
-    private ClassDto MapToClassDto(Class classItem)
-    {
-        return new ClassDto
-        {
-            Id = classItem.Id,
-            Name = classItem.Name,
-            Type = classItem.Type,
-            Description = classItem.Description,
-            InstructorId = classItem.InstructorId,
-            InstructorName = classItem.InstructorName,
-            Level = classItem.Level,
-            StartTime = classItem.StartTime,
-            DurationMinutes = classItem.DurationMinutes,
-            Capacity = classItem.Capacity,
-            CurrentEnrollment = classItem.CurrentEnrollment,
-            AverageRating = classItem.AverageRating,
-            TotalRatings = classItem.TotalRatings,
-            WeeklyBookings = classItem.WeeklyBookings,
-            IsActive = classItem.IsActive
-        };
     }
 }

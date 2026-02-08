@@ -1,5 +1,6 @@
 using FitLife.Core.Interfaces;
 using FitLife.Core.Models;
+using Microsoft.Extensions.Logging;
 using System.Text.Json;
 
 namespace FitLife.Core.Services;
@@ -10,6 +11,12 @@ namespace FitLife.Core.Services;
 /// </summary>
 public class ScoringEngine : IScoringEngine
 {
+    private readonly ILogger<ScoringEngine> _logger;
+
+    public ScoringEngine(ILogger<ScoringEngine> logger)
+    {
+        _logger = logger;
+    }
     /// <summary>
     /// Calculates a personalized score for a class based on user profile and interaction history
     /// </summary>
@@ -90,9 +97,9 @@ public class ScoringEngine : IScoringEngine
             if (preferredTypes != null && preferredTypes.Contains(classType))
                 return 15;
         }
-        catch
+        catch (JsonException ex)
         {
-            // Invalid JSON, return 0
+            _logger.LogWarning(ex, "Failed to parse PreferredClassTypes JSON for scoring");
         }
 
         return 0;
@@ -121,9 +128,9 @@ public class ScoringEngine : IScoringEngine
                         return instructorIdElement.GetString() == instructorId;
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Invalid metadata
+                    _logger.LogWarning(ex, "Failed to parse interaction metadata for instructor scoring");
                 }
                 return false;
             });

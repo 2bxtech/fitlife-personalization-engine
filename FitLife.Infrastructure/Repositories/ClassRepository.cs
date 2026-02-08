@@ -50,4 +50,10 @@ public class ClassRepository : Repository<Class>, IClassRepository
             .Take(limit)
             .ToListAsync();
     }
+
+    public async Task<IEnumerable<Class>> GetByIdsAsync(IEnumerable<string> ids)
+    {
+        var idList = ids.ToList();
+        return await _dbSet.Where(c => idList.Contains(c.Id)).ToListAsync();
+    }
 }
