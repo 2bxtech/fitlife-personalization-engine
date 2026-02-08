@@ -1,11 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import HomeView from '@/views/HomeView.vue'
-import LoginView from '@/views/LoginView.vue'
-import RegisterView from '@/views/RegisterView.vue'
-import DashboardView from '@/views/DashboardView.vue'
-import ClassesView from '@/views/ClassesView.vue'
-import ProfileView from '@/views/ProfileView.vue'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -13,37 +7,42 @@ export const router = createRouter({
     {
       path: '/',
       name: 'home',
-      component: HomeView,
+      component: () => import('@/views/HomeView.vue'),
     },
     {
       path: '/login',
       name: 'login',
-      component: LoginView,
+      component: () => import('@/views/LoginView.vue'),
       meta: { requiresGuest: true },
     },
     {
       path: '/register',
       name: 'register',
-      component: RegisterView,
+      component: () => import('@/views/RegisterView.vue'),
       meta: { requiresGuest: true },
     },
     {
       path: '/dashboard',
       name: 'dashboard',
-      component: DashboardView,
+      component: () => import('@/views/DashboardView.vue'),
       meta: { requiresAuth: true },
     },
     {
       path: '/classes',
       name: 'classes',
-      component: ClassesView,
+      component: () => import('@/views/ClassesView.vue'),
       meta: { requiresAuth: true },
     },
     {
       path: '/profile',
       name: 'profile',
-      component: ProfileView,
+      component: () => import('@/views/ProfileView.vue'),
       meta: { requiresAuth: true },
+    },
+    {
+      path: '/:pathMatch(.*)*',
+      name: 'not-found',
+      component: () => import('@/views/NotFoundView.vue'),
     },
   ],
 })

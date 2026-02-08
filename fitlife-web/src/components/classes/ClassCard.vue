@@ -39,7 +39,10 @@ const formattedDate = computed(() => {
 })
 
 async function handleView() {
+  const viewedKey = `viewed_${props.classData.id}`
+  if (sessionStorage.getItem(viewedKey)) return
   if (authStore.user) {
+    sessionStorage.setItem(viewedKey, '1')
     await recommendationStore.trackEvent({
       userId: authStore.user.id,
       itemId: props.classData.id,
