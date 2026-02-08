@@ -204,21 +204,24 @@ builder.Services.AddHealthChecks()
 
 var app = builder.Build();
 
-// Auto-apply pending migrations at startup (safe for dev/Docker; for prod use explicit migration steps)
-using (var migrationScope = app.Services.CreateScope())
+// Auto-apply pending migrations at startup (skip in Testing environment)
+if (!app.Environment.IsEnvironment("Testing"))
 {
-    var db = migrationScope.ServiceProvider.GetRequiredService<FitLifeDbContext>();
-    var migrationLogger = migrationScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-    try
+    using (var migrationScope = app.Services.CreateScope())
     {
-        migrationLogger.LogInformation("Applying pending database migrations...");
-        await db.Database.MigrateAsync();
-        migrationLogger.LogInformation("Database migrations applied successfully");
-    }
-    catch (Exception ex)
-    {
-        migrationLogger.LogError(ex, "Error applying database migrations");
-        throw;
+        var db = migrationScope.ServiceProvider.GetRequiredService<FitLifeDbContext>();
+        var migrationLogger = migrationScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        try
+        {
+            migrationLogger.LogInformation("Applying pending database migrations...");
+            await db.Database.MigrateAsync();
+            migrationLogger.LogInformation("Database migrations applied successfully");
+        }
+        catch (Exception ex)
+        {
+            migrationLogger.LogError(ex, "Error applying database migrations");
+            throw;
+        }
     }
 }
 
