@@ -268,21 +268,22 @@ app.MapHealthChecks("/health");
 app.MapControllers();
 
 // Graceful shutdown: Flush Kafka producer
+// Capture references BEFORE app.Run() to avoid ObjectDisposedException in the callback
+var kafkaProducerForShutdown = app.Services.GetRequiredService<KafkaProducer>();
+var shutdownLogger = app.Services.GetRequiredService<ILogger<Program>>();
 var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
 lifetime.ApplicationStopping.Register(() =>
 {
-    var logger = app.Services.GetRequiredService<ILogger<Program>>();
-    logger.LogInformation("Application shutting down - flushing Kafka producer");
+    shutdownLogger.LogInformation("Application shutting down - flushing Kafka producer");
     
     try
     {
-        var kafkaProducer = app.Services.GetRequiredService<KafkaProducer>();
-        kafkaProducer.Flush(TimeSpan.FromSeconds(30));
-        logger.LogInformation("Kafka producer flushed successfully");
+        kafkaProducerForShutdown.Flush(TimeSpan.FromSeconds(30));
+        shutdownLogger.LogInformation("Kafka producer flushed successfully");
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "Error flushing Kafka producer during shutdown");
+        shutdownLogger.LogError(ex, "Error flushing Kafka producer during shutdown");
     }
 });
 

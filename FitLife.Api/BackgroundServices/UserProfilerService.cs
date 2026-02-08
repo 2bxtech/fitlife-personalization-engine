@@ -45,7 +45,15 @@ public class UserProfilerService : BackgroundService
             intervalMinutes, lookbackDays);
 
         // Wait before first run to let other services initialize
-        await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
+        try
+        {
+            await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("UserProfilerService cancelled during startup delay");
+            return;
+        }
 
         while (!stoppingToken.IsCancellationRequested)
         {
