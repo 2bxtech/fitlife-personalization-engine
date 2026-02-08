@@ -47,10 +47,14 @@ public class RecommendationRepository : Repository<Recommendation>, IRecommendat
     public async Task SaveRecommendationsAsync(string userId, List<Recommendation> recommendations)
     {
         // Delete existing recommendations for the user
-        await DeleteByUserIdAsync(userId);
+        var existing = await _dbSet.Where(r => r.UserId == userId).ToListAsync();
+        _dbSet.RemoveRange(existing);
 
         // Add new recommendations
         await _dbSet.AddRangeAsync(recommendations);
+        
+        // SaveChangesAsync is already transactional and will rollback on exception
+        // No need for explicit transaction when retry strategy is configured
         await _context.SaveChangesAsync();
     }
 }

@@ -190,13 +190,13 @@ async function handleRegister() {
               v-for="goal in availableGoals"
               :key="goal"
               type="button"
-              @click="toggleGoal(goal)"
               :class="[
                 'px-4 py-2 rounded-lg border transition-colors',
                 formData.goals.includes(goal)
                   ? 'bg-primary-600 text-white border-primary-600'
                   : 'bg-white text-gray-700 border-gray-300 hover:border-primary-500'
               ]"
+              @click="toggleGoal(goal)"
             >
               {{ goal }}
             </button>
@@ -212,13 +212,13 @@ async function handleRegister() {
               v-for="type in classTypes"
               :key="type"
               type="button"
-              @click="toggleClassType(type)"
               :class="[
                 'px-4 py-2 rounded-lg border transition-colors',
                 formData.preferredClassTypes.includes(type)
                   ? 'bg-primary-600 text-white border-primary-600'
                   : 'bg-white text-gray-700 border-gray-300 hover:border-primary-500'
               ]"
+              @click="toggleClassType(type)"
             >
               {{ type }}
             </button>

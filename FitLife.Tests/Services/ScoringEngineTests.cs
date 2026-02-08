@@ -1,6 +1,7 @@
 using FluentAssertions;
 using FitLife.Core.Models;
 using FitLife.Core.Services;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace FitLife.Tests.Services;
@@ -15,7 +16,7 @@ public class ScoringEngineTests
 
     public ScoringEngineTests()
     {
-        _engine = new ScoringEngine();
+        _engine = new ScoringEngine(NullLogger<ScoringEngine>.Instance);
     }
 
     #region Factor 1: Fitness Level Match (Weight: 10)

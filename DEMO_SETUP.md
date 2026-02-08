@@ -116,12 +116,11 @@ npm run dev
 **Demo Flow**:
 1. Login with one of the demo users
 2. View personalized recommendations on dashboard
-3. Browse class catalog with filters
-4. Click a class to see details
-5. Book a class
-6. View recommendations change based on new interaction
-7. Refresh recommendations manually
-8. Check different user profiles to see personalization differences
+3. Browse class catalog with filters (type, level)
+4. Book a class from the catalog
+5. Refresh recommendations to see personalization adapt
+6. Update preferences in profile page
+7. Check different user profiles to see personalization differences
 
 ### Troubleshooting Local Demo
 
@@ -418,8 +417,8 @@ Similar process to Railway:
 
 **Explain Personalization (1 minute)**:
 - Point out recommendations are mostly Yoga/Pilates classes
-- Click a recommendation to show scoring explanation: "Because you love Yoga classes and you enjoy classes with Sarah Martinez"
-- Show class details: rating, availability, instructor
+- Show scoring explanation on each recommendation card: "Because you love Yoga classes and you enjoy classes with Sarah Martinez"
+- Highlight class info: rating, availability, instructor
 
 **Show Behavior Tracking (1 minute)**:
 - Book a HIIT class (outside usual preferences)

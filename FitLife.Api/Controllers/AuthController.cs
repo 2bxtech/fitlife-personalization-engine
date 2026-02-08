@@ -1,4 +1,4 @@
-using FitLife.Api.DTOs;
+using FitLife.Core.DTOs;
 using FitLife.Core.Interfaces;
 using FitLife.Core.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -80,7 +80,7 @@ public class AuthController : ControllerBase
                 Data = new AuthResponseDto
                 {
                     Token = token,
-                    User = MapToUserDto(user)
+                    User = DtoMappers.MapToUserDto(user)
                 },
                 Message = "Registration successful"
             });
@@ -147,7 +147,7 @@ public class AuthController : ControllerBase
                 Data = new AuthResponseDto
                 {
                     Token = token,
-                    User = MapToUserDto(user)
+                    User = DtoMappers.MapToUserDto(user)
                 },
                 Message = "Login successful"
             });
@@ -162,30 +162,4 @@ public class AuthController : ControllerBase
             });
         }
     }
-
-    private static UserDto MapToUserDto(User user)
-    {
-        return new UserDto
-        {
-            Id = user.Id,
-            Email = user.Email,
-            FirstName = user.FirstName,
-            LastName = user.LastName,
-            FitnessLevel = user.FitnessLevel,
-            Goals = JsonSerializer.Deserialize<List<string>>(user.Goals) ?? new(),
-            PreferredClassTypes = JsonSerializer.Deserialize<List<string>>(user.PreferredClassTypes) ?? new(),
-            Segment = user.Segment,
-            CreatedAt = user.CreatedAt,
-            UpdatedAt = user.UpdatedAt
-        };
-    }
-}
-
-/// <summary>
-/// DTO for authentication response
-/// </summary>
-public class AuthResponseDto
-{
-    public string Token { get; set; } = string.Empty;
-    public UserDto User { get; set; } = null!;
 }

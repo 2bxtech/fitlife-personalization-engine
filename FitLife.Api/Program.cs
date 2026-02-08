@@ -61,16 +61,20 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 // Configure Entity Framework Core with SQL Server
-builder.Services.AddDbContext<FitLifeDbContext>(options =>
-    options.UseSqlServer(
-        builder.Configuration.GetConnectionString("DefaultConnection"),
-        sqlOptions => sqlOptions.EnableRetryOnFailure(
-            maxRetryCount: 3,
-            maxRetryDelay: TimeSpan.FromSeconds(5),
-            errorNumbersToAdd: null
+// Skip registration in Testing environment — tests register InMemory provider instead
+if (!builder.Environment.IsEnvironment("Testing"))
+{
+    builder.Services.AddDbContext<FitLifeDbContext>(options =>
+        options.UseSqlServer(
+            builder.Configuration.GetConnectionString("DefaultConnection"),
+            sqlOptions => sqlOptions.EnableRetryOnFailure(
+                maxRetryCount: 3,
+                maxRetryDelay: TimeSpan.FromSeconds(5),
+                errorNumbersToAdd: null
+            )
         )
-    )
-);
+    );
+}
 
 // Register repositories
 builder.Services.AddScoped<IUserRepository, UserRepository>();
@@ -204,6 +208,27 @@ builder.Services.AddHealthChecks()
 
 var app = builder.Build();
 
+// Auto-apply pending migrations at startup (skip in Testing environment)
+if (!app.Environment.IsEnvironment("Testing"))
+{
+    using (var migrationScope = app.Services.CreateScope())
+    {
+        var db = migrationScope.ServiceProvider.GetRequiredService<FitLifeDbContext>();
+        var migrationLogger = migrationScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        try
+        {
+            migrationLogger.LogInformation("Applying pending database migrations...");
+            await db.Database.MigrateAsync();
+            migrationLogger.LogInformation("Database migrations applied successfully");
+        }
+        catch (Exception ex)
+        {
+            migrationLogger.LogError(ex, "Error applying database migrations");
+            throw;
+        }
+    }
+}
+
 // Seed database if --seed argument is provided
 if (args.Contains("--seed"))
 {
@@ -268,22 +293,26 @@ app.MapHealthChecks("/health");
 app.MapControllers();
 
 // Graceful shutdown: Flush Kafka producer
+// Capture references BEFORE app.Run() to avoid ObjectDisposedException in the callback
+var kafkaProducerForShutdown = app.Services.GetRequiredService<KafkaProducer>();
+var shutdownLogger = app.Services.GetRequiredService<ILogger<Program>>();
 var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
 lifetime.ApplicationStopping.Register(() =>
 {
-    var logger = app.Services.GetRequiredService<ILogger<Program>>();
-    logger.LogInformation("Application shutting down - flushing Kafka producer");
+    shutdownLogger.LogInformation("Application shutting down - flushing Kafka producer");
     
     try
     {
-        var kafkaProducer = app.Services.GetRequiredService<KafkaProducer>();
-        kafkaProducer.Flush(TimeSpan.FromSeconds(30));
-        logger.LogInformation("Kafka producer flushed successfully");
+        kafkaProducerForShutdown.Flush(TimeSpan.FromSeconds(30));
+        shutdownLogger.LogInformation("Kafka producer flushed successfully");
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "Error flushing Kafka producer during shutdown");
+        shutdownLogger.LogError(ex, "Error flushing Kafka producer during shutdown");
     }
 });
 
 app.Run();
+
+// Make Program class accessible for WebApplicationFactory in integration tests
+public partial class Program { }

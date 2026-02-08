@@ -25,7 +25,7 @@ function navigateToDashboard() {
           Get AI-powered class recommendations tailored to your fitness level, preferences, and goals.
         </p>
         
-        <button @click="navigateToDashboard" class="px-8 py-4 bg-primary-600 text-white text-lg font-semibold rounded-lg hover:bg-primary-700 transition-colors shadow-lg">
+        <button class="px-8 py-4 bg-primary-600 text-white text-lg font-semibold rounded-lg hover:bg-primary-700 transition-colors shadow-lg" @click="navigateToDashboard">
           {{ authStore.isAuthenticated ? 'Go to Dashboard' : 'Get Started' }}
         </button>
 

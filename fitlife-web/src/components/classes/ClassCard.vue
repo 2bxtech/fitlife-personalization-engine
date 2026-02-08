@@ -39,7 +39,10 @@ const formattedDate = computed(() => {
 })
 
 async function handleView() {
+  const viewedKey = `viewed_${props.classData.id}`
+  if (sessionStorage.getItem(viewedKey)) return
   if (authStore.user) {
+    sessionStorage.setItem(viewedKey, '1')
     await recommendationStore.trackEvent({
       userId: authStore.user.id,
       itemId: props.classData.id,
@@ -84,8 +87,8 @@ onMounted(() => {
 
     <div class="grid grid-cols-2 gap-4 mb-4 text-sm">
       <div>
-        <span class="text-gray-600">Difficulty:</span>
-        <span class="ml-2 font-semibold">{{ classData.difficulty }}</span>
+        <span class="text-gray-600">Level:</span>
+        <span class="ml-2 font-semibold">{{ classData.level }}</span>
       </div>
       <div>
         <span class="text-gray-600">Rating:</span>
@@ -110,9 +113,9 @@ onMounted(() => {
     </div>
 
     <button 
-      @click="handleBook"
       :disabled="classData.currentEnrollment >= classData.capacity"
       class="w-full px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+      @click="handleBook"
     >
       {{ classData.currentEnrollment >= classData.capacity ? 'Class Full' : 'Book Now' }}
     </button>
