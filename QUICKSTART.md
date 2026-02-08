@@ -41,6 +41,20 @@ npm install
 npm run dev  # http://localhost:3000
 ```
 
+### Option 3: Full Docker (all-in-one)
+```powershell
+# Runs everything in containers — no local SDK needed
+docker-compose up -d --build
+
+# Wait for healthy containers (~60s)
+docker ps
+
+# Seed the database (first time only)
+docker exec fitlife-api dotnet FitLife.Api.dll --seed
+```
+- **Frontend**: http://localhost:3000
+- **API/Swagger**: http://localhost:5269/swagger
+
 ## Demo Users
 
 All passwords: `Demo123!`

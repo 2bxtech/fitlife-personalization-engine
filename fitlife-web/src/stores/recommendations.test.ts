@@ -12,12 +12,10 @@ vi.mock('@/services/recommendationService', () => ({
 }))
 
 const mockRec = {
-  classId: 'c1',
-  className: 'Yoga Flow',
-  classType: 'Yoga',
   score: 85.5,
   rank: 1,
   reason: 'Matches your preferred class type',
+  generatedAt: '2025-12-01T09:00:00Z',
   class: {
     id: 'c1',
     name: 'Yoga Flow',
@@ -30,7 +28,10 @@ const mockRec = {
     durationMinutes: 60,
     capacity: 30,
     currentEnrollment: 15,
+    availableSpots: 15,
     averageRating: 4.5,
+    totalRatings: 42,
+    weeklyBookings: 25,
     isActive: true,
   },
 }
@@ -56,7 +57,7 @@ describe('useRecommendationStore', () => {
     await store.fetchRecommendations('u1')
 
     expect(store.recommendations).toHaveLength(1)
-    expect(store.recommendations[0].className).toBe('Yoga Flow')
+    expect(store.recommendations[0]!.class.name).toBe('Yoga Flow')
     expect(store.loading).toBe(false)
   })
 
@@ -86,7 +87,7 @@ describe('useRecommendationStore', () => {
 
     const store = useRecommendationStore()
     // Should not throw — tracking errors are silently caught
-    await store.trackEvent({ userId: 'u1', itemId: 'c1', eventType: 'View', timestamp: new Date().toISOString() })
+    await store.trackEvent({ userId: 'u1', itemId: 'c1', itemType: 'class', eventType: 'View', timestamp: new Date().toISOString() })
 
     expect(store.error).toBeNull()
   })

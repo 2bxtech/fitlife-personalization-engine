@@ -23,7 +23,10 @@ const mockClass = {
   durationMinutes: 60,
   capacity: 30,
   currentEnrollment: 15,
+  availableSpots: 15,
   averageRating: 4.5,
+  totalRatings: 42,
+  weeklyBookings: 25,
   isActive: true,
 }
 
@@ -49,7 +52,7 @@ describe('useClassStore', () => {
     await store.fetchClasses()
 
     expect(store.classes).toHaveLength(1)
-    expect(store.classes[0].name).toBe('Yoga Flow')
+    expect(store.classes[0]!.name).toBe('Yoga Flow')
     expect(store.loading).toBe(false)
     expect(store.error).toBeNull()
   })

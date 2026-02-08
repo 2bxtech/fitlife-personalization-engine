@@ -9,7 +9,6 @@ metadata:
     nginx.ingress.kubernetes.io/limit-rps: "100"
 spec:
   ingressClassName: nginx
-spec:
   tls:
   - hosts:
     - fitlife.example.com
