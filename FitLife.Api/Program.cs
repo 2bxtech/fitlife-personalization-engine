@@ -1,4 +1,5 @@
 using FitLife.Api.BackgroundServices;
+using FitLife.Api.Configuration;
 using FitLife.Core.Interfaces;
 using FitLife.Core.Services;
 using FitLife.Core.Auth;
@@ -15,6 +16,8 @@ using System.Text;
 using AspNetCoreRateLimit;
 
 var builder = WebApplication.CreateBuilder(args);
+
+ProductionConfigurationValidator.Validate(builder.Configuration, builder.Environment);
 
 // Add services to the container.
 builder.Services.AddControllers();
