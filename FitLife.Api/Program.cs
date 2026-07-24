@@ -1,5 +1,6 @@
 using FitLife.Api.BackgroundServices;
 using FitLife.Api.Configuration;
+using FitLife.Api.Health;
 using FitLife.Core.Interfaces;
 using FitLife.Core.Services;
 using FitLife.Core.Auth;
@@ -12,6 +13,8 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using System.Text;
 using AspNetCoreRateLimit;
 
@@ -96,6 +99,7 @@ builder.Services.AddSingleton<KafkaProducer>();
 // Register Redis cache service (singleton - connection pooling)
 builder.Services.AddSingleton<RedisCacheService>();
 builder.Services.AddSingleton<ICacheService>(sp => sp.GetRequiredService<RedisCacheService>());
+builder.Services.AddSingleton<IRedisHealthProbe>(sp => sp.GetRequiredService<RedisCacheService>());
 
 // Register JWT service
 builder.Services.AddSingleton<IJwtService, JwtService>();
@@ -183,36 +187,14 @@ builder.Services.AddCors(options =>
     });
 });
 
-// Add health checks
+// Add dependency-independent liveness and dependency-aware readiness checks
 builder.Services.AddHealthChecks()
-    .AddCheck("database", () =>
-    {
-        try
-        {
-            using var scope = builder.Services.BuildServiceProvider().CreateScope();
-            var context = scope.ServiceProvider.GetRequiredService<FitLifeDbContext>();
-            context.Database.CanConnect();
-            return Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Healthy("Database connection is healthy");
-        }
-        catch (Exception ex)
-        {
-            return Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Unhealthy("Database connection failed", ex);
-        }
-    })
-    .AddCheck("redis", () =>
-    {
-        try
-        {
-            var redis = builder.Services.BuildServiceProvider().GetRequiredService<RedisCacheService>();
-            return redis.IsConnected
-                ? Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Healthy("Redis connection is healthy")
-                : Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Unhealthy("Redis is not connected");
-        }
-        catch (Exception ex)
-        {
-            return Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Unhealthy("Redis check failed", ex);
-        }
-    });
+    .AddCheck(
+        "self",
+        () => HealthCheckResult.Healthy("Process is running"),
+        tags: new[] { "live" })
+    .AddCheck<DatabaseHealthCheck>("database", tags: new[] { "ready" })
+    .AddCheck<RedisHealthCheck>("redis", tags: new[] { "ready" });
 
 var app = builder.Build();
 
@@ -295,8 +277,19 @@ app.UseIpRateLimiting();
 app.UseAuthentication();
 app.UseAuthorization();
 
-// Health check endpoints for Kubernetes probes
-app.MapHealthChecks("/health");
+// /health remains a compatibility alias for dependency-aware readiness.
+app.MapHealthChecks("/health", new HealthCheckOptions
+{
+    Predicate = registration => registration.Tags.Contains("ready")
+});
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = registration => registration.Tags.Contains("live")
+});
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = registration => registration.Tags.Contains("ready")
+});
 
 app.MapControllers();
 
