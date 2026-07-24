@@ -266,7 +266,7 @@ FitLife.Api/               # Web API + Background Services
   
 FitLife.Core/              # Business logic (scoring engine, services)
   Services/                # RecommendationService, ScoringEngine
-  Models/                  # User, Class, Interaction, Recommendation
+  Models/                  # User, Class, Booking, Interaction, Recommendation
   Interfaces/              # IRecommendationService, etc.
   
 FitLife.Infrastructure/    # External dependencies

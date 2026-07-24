@@ -37,4 +37,5 @@ public class User
     // Navigation properties
     public virtual ICollection<Interaction> Interactions { get; set; } = new List<Interaction>();
     public virtual ICollection<Recommendation> Recommendations { get; set; } = new List<Recommendation>();
+    public virtual ICollection<Booking> Bookings { get; set; } = new List<Booking>();
 }
