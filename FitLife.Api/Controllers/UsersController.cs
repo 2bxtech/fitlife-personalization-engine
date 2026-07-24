@@ -1,9 +1,9 @@
 using FitLife.Core.DTOs;
+using FitLife.Api.Auth;
 using FitLife.Core.Interfaces;
 using FitLife.Core.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Security.Claims;
 using System.Text.Json;
 
 namespace FitLife.Api.Controllers;
@@ -35,8 +35,10 @@ public class UsersController : ControllerBase
     {
         try
         {
-            var tokenUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
-                              ?? User.FindFirst("sub")?.Value;
+            var tokenUserId = User.GetSubjectId();
+            if (tokenUserId == null)
+                return Unauthorized();
+
             if (tokenUserId != id)
                 return Forbid();
 
@@ -78,8 +80,10 @@ public class UsersController : ControllerBase
     {
         try
         {
-            var tokenUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
-                              ?? User.FindFirst("sub")?.Value;
+            var tokenUserId = User.GetSubjectId();
+            if (tokenUserId == null)
+                return Unauthorized();
+
             if (tokenUserId != id)
                 return Forbid();
 
@@ -140,8 +144,10 @@ public class UsersController : ControllerBase
     {
         try
         {
-            var tokenUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
-                              ?? User.FindFirst("sub")?.Value;
+            var tokenUserId = User.GetSubjectId();
+            if (tokenUserId == null)
+                return Unauthorized();
+
             if (tokenUserId != id)
                 return Forbid();
 

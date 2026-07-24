@@ -1,8 +1,8 @@
 using FitLife.Core.DTOs;
 using FitLife.Core.Interfaces;
+using FitLife.Api.Auth;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Security.Claims;
 
 namespace FitLife.Api.Controllers;
 
@@ -37,7 +37,10 @@ public class RecommendationsController : ControllerBase
         try
         {
             // Validate user authorization
-            var authenticatedUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var authenticatedUserId = User.GetSubjectId();
+            if (authenticatedUserId == null)
+                return Unauthorized();
+
             if (authenticatedUserId != userId)
             {
                 _logger.LogWarning(
@@ -87,7 +90,10 @@ public class RecommendationsController : ControllerBase
         try
         {
             // Validate user authorization
-            var authenticatedUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var authenticatedUserId = User.GetSubjectId();
+            if (authenticatedUserId == null)
+                return Unauthorized();
+
             if (authenticatedUserId != userId)
             {
                 _logger.LogWarning(

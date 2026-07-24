@@ -1,10 +1,10 @@
 using FitLife.Core.DTOs;
 using FitLife.Core.Auth;
+using FitLife.Api.Auth;
 using FitLife.Core.Interfaces;
 using FitLife.Core.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Security.Claims;
 using System.Text.Json;
 
 namespace FitLife.Api.Controllers;
@@ -156,9 +156,8 @@ public class ClassesController : ControllerBase
     {
         try
         {
-            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
-                         ?? User.FindFirst("sub")?.Value;
-            if (string.IsNullOrEmpty(userId))
+            var userId = User.GetSubjectId();
+            if (userId == null)
                 return Unauthorized(new ApiResponse<ClassDto> { Success = false, Message = "User not authenticated" });
 
             var classEntity = await _classRepository.GetByIdAsync(id);
