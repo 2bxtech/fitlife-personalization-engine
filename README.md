@@ -205,8 +205,9 @@ docker exec -it fitlife-kafka kafka-console-consumer \
 - `POST /api/events/batch` - Track multiple events (requires auth)
 
 ### Health
-- `GET /health` - Overall health check
-- A separate `/health/ready` readiness probe is planned but not yet implemented
+- `GET /health/live` - Process liveness without external dependencies
+- `GET /health/ready` - Database and Redis readiness
+- `GET /health` - Compatibility alias for readiness
 
 **Full API documentation**: See Swagger UI at `/swagger` when running locally
 

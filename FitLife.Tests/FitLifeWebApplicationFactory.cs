@@ -1,4 +1,5 @@
 using FitLife.Infrastructure.Data;
+using FitLife.Core.Interfaces;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -6,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace FitLife.Tests;
 
@@ -46,6 +48,14 @@ public class FitLifeWebApplicationFactory : WebApplicationFactory<Program>
             {
                 options.UseInMemoryDatabase("FitLifeTestDb");
             });
+
+            services.RemoveAll<IRedisHealthProbe>();
+            services.AddSingleton<IRedisHealthProbe, HealthyRedisHealthProbe>();
         });
+    }
+
+    private sealed class HealthyRedisHealthProbe : IRedisHealthProbe
+    {
+        public Task<TimeSpan> PingAsync() => Task.FromResult(TimeSpan.Zero);
     }
 }

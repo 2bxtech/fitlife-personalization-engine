@@ -513,9 +513,9 @@ Log.Information("Recommendation generated for {UserId} with score {Score}",
 ```
 
 ### Health Checks
-- **/health**: Overall system health
-- **Custom checks**: Database and Redis connectivity
-- A separate **/health/ready** readiness probe (distinct from liveness) is planned but not yet implemented.
+- **/health/live**: Process liveness without external dependency checks
+- **/health/ready**: Database and Redis readiness
+- **/health**: Compatibility alias for readiness
 
 ### Metrics (Prometheus-compatible)
 - Request count by endpoint

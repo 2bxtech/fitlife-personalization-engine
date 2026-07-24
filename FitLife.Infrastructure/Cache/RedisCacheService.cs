@@ -10,7 +10,7 @@ namespace FitLife.Infrastructure.Cache;
 /// Redis cache service for recommendation caching and session storage
 /// Implements cache-aside pattern with TTL management
 /// </summary>
-public class RedisCacheService : ICacheService, IDisposable
+public class RedisCacheService : ICacheService, IRedisHealthProbe, IDisposable
 {
     private readonly Lazy<ConnectionMultiplexer> _lazyConnection;
     private readonly ILogger<RedisCacheService> _logger;

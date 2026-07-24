@@ -373,8 +373,9 @@ az ad sp create-for-rbac \
 2. **Create New Project** → "Deploy from GitHub"
 
 3. **Add Services**:
-   - **PostgreSQL** (Railway provides managed Postgres - easier than SQL Server)
-     - Auto-provisioned, connection string auto-injected
+   - **SQL Server-compatible database**
+     - FitLife uses the SQL Server EF Core provider; PostgreSQL connection
+       strings are not supported.
    
    - **Redis** (Railway Plugin)
      - One-click add from marketplace
@@ -391,13 +392,17 @@ az ad sp create-for-rbac \
      - Start command: `npm run preview`
      - Port: `3000`
 
-4. **Environment Variables** (API Service):
-   ```
-   ConnectionStrings__DefaultConnection=${{Postgres.DATABASE_URL}}
-   Redis__ConnectionString=${{Redis.REDIS_URL}}
-   Kafka__BootstrapServers=localhost:9092  # Not ideal, but works for demo
-   Jwt__Secret=your-super-secret-jwt-key-min-32-chars
-   ```
+4. **Required production environment variables** (API Service):
+
+   - `ConnectionStrings__DefaultConnection`
+   - `Redis__ConnectionString`
+   - `Kafka__BootstrapServers`
+   - `Jwt__Secret`
+
+   Supply values through the hosting platform's secret/configuration store.
+   Production startup rejects missing values, tracked demo placeholders, and
+   local dependency endpoints. The JWT secret must contain at least 32
+   characters.
 
 5. **Deploy**: Automatic on git push
 

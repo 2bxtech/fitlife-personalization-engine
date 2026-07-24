@@ -65,12 +65,16 @@ Before using these manifests in a live environment:
 
 ## Health checks
 
-- API: `GET /health` on port 8080 checks database and Redis connectivity.
+- API liveness: `GET /health/live` on port 8080 checks only that the process is
+  running.
+- API readiness: `GET /health/ready` on port 8080 checks database and Redis
+  connectivity.
+- API compatibility: `GET /health` remains an alias for readiness.
 - Web: `GET /health` on port 80 returns a static nginx health response.
 
-The API currently uses the same dependency-aware endpoint for liveness and
-readiness. Split probe semantics before a live Kubernetes deployment so a
-transient backing-service failure does not cause unnecessary process restarts.
+The configured liveness probe is dependency-independent, so a transient
+database or Redis failure removes the API from service through readiness
+without restarting a healthy process.
 
 ## Troubleshooting
 
