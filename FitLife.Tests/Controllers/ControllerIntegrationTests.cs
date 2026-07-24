@@ -1,15 +1,38 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
 using System.Text.Json;
 using FitLife.Core.DTOs;
 using FitLife.Core.Models;
 using FitLife.Infrastructure.Data;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.IdentityModel.Tokens;
 using Xunit;
 
 namespace FitLife.Tests.Controllers;
+
+internal static class AuthenticationTestTokens
+{
+    public static string WithoutSubject()
+    {
+        const string secret = "your-256-bit-secret-key-here-change-in-production-minimum-32-characters";
+        var credentials = new SigningCredentials(
+            new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret)),
+            SecurityAlgorithms.HmacSha256);
+        var token = new JwtSecurityToken(
+            issuer: "FitLife.Api",
+            audience: "FitLife.Client",
+            claims: new[] { new Claim(ClaimTypes.Role, "Member") },
+            expires: DateTime.UtcNow.AddMinutes(5),
+            signingCredentials: credentials);
+
+        return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+}
 
 /// <summary>
 /// Integration tests for AuthController (register + login)
@@ -326,6 +349,19 @@ public class ClassesControllerTests : IClassFixture<FitLifeWebApplicationFactory
     }
 
     [Fact]
+    public async Task BookClass_MissingSubject_ReturnsUnauthorized()
+    {
+        using var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            AuthenticationTestTokens.WithoutSubject());
+
+        var response = await client.PostAsync("/api/classes/some-id/book", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
     public async Task CatalogMutations_NoAuth_ReturnUnauthorized()
     {
         using var client = _factory.CreateClient();
@@ -488,6 +524,44 @@ public class UsersControllerTests : IClassFixture<FitLifeWebApplicationFactory>
         body!.Data!.FitnessLevel.Should().Be("Advanced");
         body.Data.PreferredClassTypes.Should().Contain("HIIT");
     }
+
+    [Fact]
+    public async Task UpdatePreferences_OtherProfile_ReturnsForbidden()
+    {
+        var (token, _) = await RegisterAndGetAuthAsync();
+        var (_, otherUser) = await RegisterAndGetAuthAsync();
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var response = await _client.PutAsJsonAsync(
+            $"/api/users/{otherUser.Id}/preferences",
+            new UpdateUserPreferencesDto { FitnessLevel = "Advanced" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task DeleteUser_OtherProfile_ReturnsForbidden()
+    {
+        var (token, _) = await RegisterAndGetAuthAsync();
+        var (_, otherUser) = await RegisterAndGetAuthAsync();
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var response = await _client.DeleteAsync($"/api/users/{otherUser.Id}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task GetUser_MissingSubject_ReturnsUnauthorized()
+    {
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            AuthenticationTestTokens.WithoutSubject());
+
+        var response = await _client.GetAsync("/api/users/some-id");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
 }
 
 /// <summary>
@@ -575,5 +649,114 @@ public class RecommendationsControllerTests : IClassFixture<FitLifeWebApplicatio
 
         var response = await _client.PostAsync($"/api/recommendations/{user.Id}/refresh", null);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task GetRecommendations_OtherUser_ReturnsForbidden()
+    {
+        var (token, _) = await RegisterAndGetAuthAsync();
+        var (_, otherUser) = await RegisterAndGetAuthAsync();
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var response = await _client.GetAsync($"/api/recommendations/{otherUser.Id}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task RefreshRecommendations_OtherUser_ReturnsForbidden()
+    {
+        var (token, _) = await RegisterAndGetAuthAsync();
+        var (_, otherUser) = await RegisterAndGetAuthAsync();
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var response = await _client.PostAsync(
+            $"/api/recommendations/{otherUser.Id}/refresh",
+            null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task GetRecommendations_MissingSubject_ReturnsUnauthorized()
+    {
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            AuthenticationTestTokens.WithoutSubject());
+
+        var response = await _client.GetAsync("/api/recommendations/some-user");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+}
+
+public class EventsControllerTests : IClassFixture<FitLifeWebApplicationFactory>
+{
+    private readonly HttpClient _client;
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    public EventsControllerTests(FitLifeWebApplicationFactory factory)
+    {
+        _client = factory.CreateClient();
+    }
+
+    private async Task<(string Token, UserDto User)> RegisterAndGetAuthAsync()
+    {
+        var response = await _client.PostAsJsonAsync("/api/auth/register", new RegisterUserDto
+        {
+            Email = $"event_{Guid.NewGuid():N}@example.com",
+            Password = "TestPass123!",
+            FirstName = "Event",
+            LastName = "Tester",
+            FitnessLevel = "Beginner"
+        });
+        var body = await response.Content.ReadFromJsonAsync<ApiResponse<AuthResponseDto>>(JsonOptions);
+        return (body!.Data!.Token, body.Data.User!);
+    }
+
+    private static EventDto CreateEvent(string userId) => new()
+    {
+        UserId = userId,
+        ItemId = "class_001",
+        ItemType = "Class",
+        EventType = "View"
+    };
+
+    [Fact]
+    public async Task TrackEvent_OtherUser_ReturnsForbidden()
+    {
+        var (token, _) = await RegisterAndGetAuthAsync();
+        var (_, otherUser) = await RegisterAndGetAuthAsync();
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var response = await _client.PostAsJsonAsync("/api/events", CreateEvent(otherUser.Id));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task TrackEventBatch_OtherUser_ReturnsForbidden()
+    {
+        var (token, _) = await RegisterAndGetAuthAsync();
+        var (_, otherUser) = await RegisterAndGetAuthAsync();
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var response = await _client.PostAsJsonAsync(
+            "/api/events/batch",
+            new[] { CreateEvent(otherUser.Id) });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task TrackEvent_MissingSubject_ReturnsUnauthorized()
+    {
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            AuthenticationTestTokens.WithoutSubject());
+
+        var response = await _client.PostAsJsonAsync("/api/events", CreateEvent("some-user"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 }

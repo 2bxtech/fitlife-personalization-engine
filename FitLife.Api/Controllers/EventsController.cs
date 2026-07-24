@@ -1,5 +1,6 @@
 using FitLife.Core.DTOs;
 using FitLife.Core.Models;
+using FitLife.Api.Auth;
 using FitLife.Infrastructure.Kafka;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -72,8 +73,7 @@ public class EventsController : ControllerBase
 
             // Validate user from JWT token matches UserId in request
             // JwtRegisteredClaimNames.Sub becomes ClaimTypes.NameIdentifier in ASP.NET Core
-            var tokenUserId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value 
-                           ?? User.FindFirst("sub")?.Value;
+            var tokenUserId = User.GetSubjectId();
             
             if (string.IsNullOrEmpty(tokenUserId))
             {
@@ -168,8 +168,17 @@ public class EventsController : ControllerBase
                 });
             }
 
-            var tokenUserId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value 
-                           ?? User.FindFirst("sub")?.Value;
+            var tokenUserId = User.GetSubjectId();
+            if (tokenUserId == null)
+            {
+                return Unauthorized("Invalid token");
+            }
+
+            if (events.Any(eventDto => eventDto.UserId != tokenUserId))
+            {
+                return Forbid();
+            }
+
             var publishedCount = 0;
             var errors = new List<string>();
 
@@ -179,12 +188,6 @@ public class EventsController : ControllerBase
                 if (!EventTypes.IsValid(eventDto.EventType))
                 {
                     errors.Add($"Invalid event type: {eventDto.EventType}");
-                    continue;
-                }
-
-                if (tokenUserId != eventDto.UserId)
-                {
-                    errors.Add($"User mismatch for event: {eventDto.ItemId}");
                     continue;
                 }
 
