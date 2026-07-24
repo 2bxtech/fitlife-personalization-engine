@@ -1,4 +1,5 @@
 using FitLife.Core.Interfaces;
+using FitLife.Core.Auth;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
@@ -27,7 +28,11 @@ public class JwtService : IJwtService
         _expirationHours = int.Parse(_configuration["Jwt:ExpirationHours"] ?? "24");
     }
 
-    public string GenerateToken(string userId, string email, string? segment = null)
+    public string GenerateToken(
+        string userId,
+        string email,
+        string? segment = null,
+        string role = FitLifeRoles.Member)
     {
         var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_secret));
         var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
@@ -36,7 +41,7 @@ public class JwtService : IJwtService
         {
             new(JwtRegisteredClaimNames.Sub, userId),
             new(JwtRegisteredClaimNames.Email, email),
-            new(ClaimTypes.Role, "Member"),
+            new(ClaimTypes.Role, role),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
             new(JwtRegisteredClaimNames.Iat, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString())
         };

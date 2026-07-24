@@ -1,4 +1,5 @@
 using FitLife.Core.DTOs;
+using FitLife.Core.Auth;
 using FitLife.Core.Interfaces;
 using FitLife.Core.Models;
 using Microsoft.AspNetCore.Authorization;
@@ -214,7 +215,7 @@ public class ClassesController : ControllerBase
     /// Create a new class (requires authentication)
     /// </summary>
     [HttpPost]
-    [Authorize]
+    [Authorize(Policy = FitLifePolicies.ManageCatalog)]
     public async Task<ActionResult<ApiResponse<ClassDto>>> CreateClass([FromBody] CreateClassDto dto)
     {
         try
@@ -259,7 +260,7 @@ public class ClassesController : ControllerBase
     /// Update a class (requires authentication)
     /// </summary>
     [HttpPut("{id}")]
-    [Authorize]
+    [Authorize(Policy = FitLifePolicies.ManageCatalog)]
     public async Task<ActionResult<ApiResponse<ClassDto>>> UpdateClass(
         string id,
         [FromBody] UpdateClassDto dto)
@@ -322,7 +323,7 @@ public class ClassesController : ControllerBase
     /// Delete a class (requires authentication)
     /// </summary>
     [HttpDelete("{id}")]
-    [Authorize]
+    [Authorize(Policy = FitLifePolicies.ManageCatalog)]
     public async Task<ActionResult<ApiResponse<object>>> DeleteClass(string id)
     {
         try

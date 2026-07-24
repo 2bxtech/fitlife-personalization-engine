@@ -8,7 +8,11 @@ public interface IJwtService
     /// <summary>
     /// Generate JWT token for authenticated user
     /// </summary>
-    string GenerateToken(string userId, string email, string? segment = null);
+    string GenerateToken(
+        string userId,
+        string email,
+        string? segment = null,
+        string role = Auth.FitLifeRoles.Member);
     
     /// <summary>
     /// Validate JWT token and extract user ID
