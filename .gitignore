@@ -139,6 +139,10 @@ life time fitness - gym personal.txt
 
 # AI agent configuration (personal dev workflow)
 .github/copilot-instructions.md
+AGENTS.md
+CLAUDE.md
+.agents/
+.claude/
 
 # Redis dump files
 dump.rdb
@@ -153,4 +157,3 @@ sqlserver-data/
 # Coverage reports
 coverage/
 *.lcov
-.github/copilot-instructions.md

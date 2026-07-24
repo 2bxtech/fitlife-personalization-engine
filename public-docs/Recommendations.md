@@ -532,7 +532,10 @@ var candidates = await _context.Classes
 
 ### Parallel Processing
 
-**Note**: Parallelization provides benefit with larger candidate sets (500+). For this POC with ~100 candidates, sequential iteration is sufficient and simpler. The trade-off is thread overhead vs. throughput - at current scale, single-threaded scoring completes in <2 seconds.
+**Note**: Parallelization is expected to help with larger candidate sets
+(500+). For this POC with roughly 100 candidates, sequential iteration is
+sufficient and simpler. The sub-two-second value is a design target until a
+repeatable benchmark is retained.
 
 ```csharp
 // Optional: Score classes in parallel for large candidate sets (500+)

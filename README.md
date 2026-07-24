@@ -206,7 +206,7 @@ docker exec -it fitlife-kafka kafka-console-consumer \
 
 ### Health
 - `GET /health` - Overall health check
-- `GET /health/ready` - Readiness probe (Kubernetes)
+- A separate `/health/ready` readiness probe is planned but not yet implemented
 
 **Full API documentation**: See Swagger UI at `/swagger` when running locally
 
@@ -362,7 +362,7 @@ Add these to repository settings:
 - `ACR_PASSWORD` - Azure Container Registry password
 - `AZURE_CREDENTIALS` - Service principal JSON for AKS access
 
-### Workflow Triggers
+### Workflow Triggers (designed deployment behavior — see current status below)
 - Push to `main` → Deploy to production
 - Push to `development` → Deploy to staging
 - Pull request → Run tests only
@@ -373,6 +373,8 @@ Add these to repository settings:
 3. Push - Push images to Azure Container Registry
 4. Deploy - Deploy to AKS namespace
 5. Smoke Test - Verify health endpoints
+
+**Current status**: backend and frontend validation run for pushes to `main` and `development`, pull requests to `main`, and manual workflow dispatches. Image build/push and deployment stages are currently disabled (`if: false` in `.github/workflows/deploy.yml`) pending infrastructure provisioning. They are configured, not live.
 
 ## Configuration
 
@@ -435,9 +437,10 @@ VITE_API_URL=http://localhost:5269
 - Recommendation generation: <2 seconds
 
 **Scaling**:
-- API: Auto-scales 3-10 pods based on 70% CPU utilization
-- Web: Auto-scales 2-5 pods based on 70% CPU utilization
-- Background workers: Fixed 1 instance per service
+- Kubernetes manifests configure API scaling from 3-10 pods at 70% CPU utilization
+- Kubernetes manifests configure web scaling from 2-5 pods at 70% CPU utilization
+- Background workers are currently co-located with each API replica; scheduled
+  workers must be separated or coordinated before enabling horizontal API scale
 
 ## Troubleshooting
 

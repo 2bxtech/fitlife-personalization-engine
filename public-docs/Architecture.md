@@ -271,20 +271,17 @@ User views class → trackClassView(classId)
 ### 5. Class Booking Flow
 ```
 User clicks "Book Now" button
-    → trackClassBooking(classId)
-    → POST /api/events (Book event)
     → POST /api/classes/{classId}/book
-    → ClassService.BookClass()
     → Check if class is full
-    → Check if user already booked
-    → Create booking record
     → Increment class.CurrentEnrollment
-    → Publish "ClassBooked" event to Kafka
+    → Create a "Book" interaction directly
+    → Invalidate the user's recommendation cache
     → Return success
-    → [Async] EventConsumer processes event
-    → Update user's booking history
-    → Recommendations refresh to suggest similar classes
 ```
+
+The booking endpoint currently writes the interaction directly. Kafka event
+publishing is provided through the separate `/api/events` tracking flow; booking
+does not publish a second event.
 
 ## Scalability & Performance
 
@@ -344,15 +341,17 @@ CREATE INDEX IX_Classes_Active_Type
 
 ### Performance Targets
 
-| Metric                    | Target      | Current |
-|---------------------------|-------------|---------|
-| API P50 Latency           | < 100ms     | 75ms    |
-| API P95 Latency           | < 200ms     | 180ms   |
-| API P99 Latency           | < 500ms     | 450ms   |
-| Cache Hit Rate            | > 90%       | 93%     |
-| Database Query Time       | < 50ms      | 35ms    |
-| Kafka Consumer Lag        | < 1 minute  | 15s     |
-| Recommendation Generation | < 2 seconds | 1.2s    |
+| Metric                    | Target      |
+|---------------------------|-------------|
+| API P50 Latency           | < 100ms     |
+| API P95 Latency           | < 200ms     |
+| API P99 Latency           | < 500ms     |
+| Cache Hit Rate            | > 90%       |
+| Database Query Time       | < 50ms      |
+| Kafka Consumer Lag        | < 1 minute  |
+| Recommendation Generation | < 2 seconds |
+
+These are design targets, not measured results — reaching them would require a load test against a live deployment (see `public-docs/Recommendations.md`'s Evaluation Metrics section, which already frames its metrics the same way).
 
 ## Security Architecture
 
@@ -515,8 +514,8 @@ Log.Information("Recommendation generated for {UserId} with score {Score}",
 
 ### Health Checks
 - **/health**: Overall system health
-- **/health/ready**: Ready to accept traffic
-- **Custom checks**: Database, Redis, Kafka connectivity
+- **Custom checks**: Database and Redis connectivity
+- A separate **/health/ready** readiness probe (distinct from liveness) is planned but not yet implemented.
 
 ### Metrics (Prometheus-compatible)
 - Request count by endpoint
