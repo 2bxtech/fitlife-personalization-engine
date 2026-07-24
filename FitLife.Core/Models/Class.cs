@@ -44,4 +44,11 @@ public class Class
     
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+
+    /// <summary>
+    /// SQL Server rowversion used to detect concurrent capacity changes.
+    /// </summary>
+    public byte[] RowVersion { get; set; } = Array.Empty<byte>();
+
+    public virtual ICollection<Booking> Bookings { get; set; } = new List<Booking>();
 }

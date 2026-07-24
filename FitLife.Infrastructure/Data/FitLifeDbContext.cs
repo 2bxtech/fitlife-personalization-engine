@@ -16,6 +16,7 @@ public class FitLifeDbContext : DbContext
     public DbSet<Class> Classes => Set<Class>();
     public DbSet<Interaction> Interactions => Set<Interaction>();
     public DbSet<Recommendation> Recommendations => Set<Recommendation>();
+    public DbSet<Booking> Bookings => Set<Booking>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -53,6 +54,48 @@ public class FitLifeDbContext : DbContext
             entity.Property(e => e.Level).HasMaxLength(50);
             entity.Property(e => e.Description).HasMaxLength(1000);
             entity.Property(e => e.AverageRating).HasPrecision(3, 2); // e.g., 4.85
+            entity.Property(e => e.RowVersion).IsRowVersion();
+            entity.ToTable(table =>
+            {
+                table.HasCheckConstraint(
+                    "CK_Classes_Capacity_Positive",
+                    "[Capacity] > 0");
+                table.HasCheckConstraint(
+                    "CK_Classes_Enrollment_WithinCapacity",
+                    "[CurrentEnrollment] >= 0 AND [CurrentEnrollment] <= [Capacity]");
+            });
+        });
+
+        // Booking configuration
+        modelBuilder.Entity<Booking>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.UserId).IsRequired();
+            entity.Property(e => e.ClassId).IsRequired();
+            entity.Property(e => e.Status).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.IdempotencyKey).HasMaxLength(100);
+
+            entity.HasIndex(e => new { e.UserId, e.ClassId })
+                .IsUnique()
+                .HasFilter("[Status] = 'Active'");
+            entity.HasIndex(e => e.IdempotencyKey)
+                .IsUnique()
+                .HasFilter("[IdempotencyKey] IS NOT NULL");
+            entity.HasIndex(e => new { e.ClassId, e.Status });
+
+            entity.ToTable(table => table.HasCheckConstraint(
+                "CK_Bookings_Status",
+                "[Status] IN ('Active', 'Cancelled')"));
+
+            entity.HasOne(e => e.User)
+                .WithMany(e => e.Bookings)
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.Class)
+                .WithMany(e => e.Bookings)
+                .HasForeignKey(e => e.ClassId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         // Interaction configuration (event store)
