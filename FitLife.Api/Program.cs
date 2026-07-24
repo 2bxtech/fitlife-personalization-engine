@@ -1,6 +1,7 @@
 using FitLife.Api.BackgroundServices;
 using FitLife.Core.Interfaces;
 using FitLife.Core.Services;
+using FitLife.Core.Auth;
 using FitLife.Infrastructure.Auth;
 using FitLife.Infrastructure.Cache;
 using FitLife.Infrastructure.Data;
@@ -126,7 +127,11 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy(FitLifePolicies.ManageCatalog, policy =>
+        policy.RequireRole(FitLifeRoles.Operator));
+});
 
 // Configure rate limiting
 builder.Services.AddMemoryCache();

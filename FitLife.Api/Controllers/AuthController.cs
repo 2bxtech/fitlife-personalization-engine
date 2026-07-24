@@ -1,4 +1,5 @@
 using FitLife.Core.DTOs;
+using FitLife.Core.Auth;
 using FitLife.Core.Interfaces;
 using FitLife.Core.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -13,15 +14,21 @@ public class AuthController : ControllerBase
     private readonly IUserRepository _userRepository;
     private readonly IJwtService _jwtService;
     private readonly ILogger<AuthController> _logger;
+    private readonly IConfiguration _configuration;
+    private readonly IWebHostEnvironment _environment;
 
     public AuthController(
         IUserRepository userRepository,
         IJwtService jwtService,
-        ILogger<AuthController> logger)
+        ILogger<AuthController> logger,
+        IConfiguration configuration,
+        IWebHostEnvironment environment)
     {
         _userRepository = userRepository;
         _jwtService = jwtService;
         _logger = logger;
+        _configuration = configuration;
+        _environment = environment;
     }
 
     /// <summary>
@@ -70,7 +77,11 @@ public class AuthController : ControllerBase
             await _userRepository.SaveChangesAsync();
 
             // Generate JWT token
-            var token = _jwtService.GenerateToken(user.Id, user.Email, user.Segment);
+            var token = _jwtService.GenerateToken(
+                user.Id,
+                user.Email,
+                user.Segment,
+                FitLifeRoles.Member);
 
             _logger.LogInformation("User registered successfully: {Email}", dto.Email);
 
@@ -137,7 +148,11 @@ public class AuthController : ControllerBase
             }
 
             // Generate JWT token
-            var token = _jwtService.GenerateToken(user.Id, user.Email, user.Segment);
+            var token = _jwtService.GenerateToken(
+                user.Id,
+                user.Email,
+                user.Segment,
+                ResolveLoginRole(user.Email));
 
             _logger.LogInformation("User logged in successfully: {Email}", dto.Email);
 
@@ -161,5 +176,21 @@ public class AuthController : ControllerBase
                 Message = "Login failed"
             });
         }
+    }
+
+    private string ResolveLoginRole(string email)
+    {
+        if (!_environment.IsDevelopment() && !_environment.IsEnvironment("Testing"))
+        {
+            return FitLifeRoles.Member;
+        }
+
+        var operatorEmails = _configuration
+            .GetSection("DemoAuthorization:OperatorEmails")
+            .Get<string[]>() ?? Array.Empty<string>();
+
+        return operatorEmails.Contains(email, StringComparer.OrdinalIgnoreCase)
+            ? FitLifeRoles.Operator
+            : FitLifeRoles.Member;
     }
 }

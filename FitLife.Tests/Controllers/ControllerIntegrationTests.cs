@@ -189,6 +189,42 @@ public class ClassesControllerTests : IClassFixture<FitLifeWebApplicationFactory
         return body!.Data!.Token;
     }
 
+    private async Task<string> GetOperatorTokenAsync()
+    {
+        const string email = "operator@example.com";
+        const string password = "OperatorPass123!";
+
+        await _client.PostAsJsonAsync("/api/auth/register", new RegisterUserDto
+        {
+            Email = email,
+            Password = password,
+            FirstName = "Demo",
+            LastName = "Operator",
+            FitnessLevel = "Intermediate"
+        });
+
+        var response = await _client.PostAsJsonAsync("/api/auth/login", new LoginDto
+        {
+            Email = email,
+            Password = password
+        });
+        var body = await response.Content.ReadFromJsonAsync<ApiResponse<AuthResponseDto>>(JsonOptions);
+        return body!.Data!.Token;
+    }
+
+    private static CreateClassDto CreateClassRequest() => new()
+    {
+        Name = "Operator-created class",
+        Type = "Yoga",
+        Description = "Authorization integration test",
+        InstructorId = "operator-test-instructor",
+        InstructorName = "Test Instructor",
+        Level = "Beginner",
+        StartTime = DateTime.UtcNow.AddDays(2),
+        DurationMinutes = 45,
+        Capacity = 20
+    };
+
     private async Task SeedClassAsync(string id, string name = "Yoga Flow", string type = "Yoga",
         string level = "Intermediate", int capacity = 30, int enrollment = 5)
     {
@@ -287,6 +323,86 @@ public class ClassesControllerTests : IClassFixture<FitLifeWebApplicationFactory
 
         var response = await _client.PostAsync("/api/classes/nonexistent/book", null);
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task CatalogMutations_NoAuth_ReturnUnauthorized()
+    {
+        using var client = _factory.CreateClient();
+
+        var create = await client.PostAsJsonAsync("/api/classes", CreateClassRequest());
+        var update = await client.PutAsJsonAsync("/api/classes/missing", new UpdateClassDto
+        {
+            Name = "Unauthorized update"
+        });
+        var delete = await client.DeleteAsync("/api/classes/missing");
+
+        create.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        update.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        delete.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task CatalogMutations_Member_ReturnForbidden()
+    {
+        using var client = _factory.CreateClient();
+        var token = await GetAuthTokenAsync();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var create = await client.PostAsJsonAsync("/api/classes", CreateClassRequest());
+        var update = await client.PutAsJsonAsync("/api/classes/missing", new UpdateClassDto
+        {
+            Name = "Forbidden update"
+        });
+        var delete = await client.DeleteAsync("/api/classes/missing");
+
+        create.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        update.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        delete.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task CatalogMutations_Operator_ReturnSuccess()
+    {
+        using var client = _factory.CreateClient();
+        var token = await GetOperatorTokenAsync();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var create = await client.PostAsJsonAsync("/api/classes", CreateClassRequest());
+        create.StatusCode.Should().Be(HttpStatusCode.Created);
+        var createBody = await create.Content.ReadFromJsonAsync<ApiResponse<ClassDto>>(JsonOptions);
+        var classId = createBody!.Data!.Id;
+
+        var update = await client.PutAsJsonAsync($"/api/classes/{classId}", new UpdateClassDto
+        {
+            Name = "Operator-updated class"
+        });
+        update.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var delete = await client.DeleteAsync($"/api/classes/{classId}");
+        delete.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Register_ClientSuppliedOperatorRole_RemainsMember()
+    {
+        using var client = _factory.CreateClient();
+        var response = await client.PostAsJsonAsync("/api/auth/register", new
+        {
+            Email = $"self_elevate_{Guid.NewGuid():N}@example.com",
+            Password = "TestPass123!",
+            FirstName = "Self",
+            LastName = "Elevate",
+            FitnessLevel = "Beginner",
+            Role = "Operator"
+        });
+        var body = await response.Content.ReadFromJsonAsync<ApiResponse<AuthResponseDto>>(JsonOptions);
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", body!.Data!.Token);
+
+        var mutation = await client.PostAsJsonAsync("/api/classes", CreateClassRequest());
+
+        mutation.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 }
 

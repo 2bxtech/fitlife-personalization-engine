@@ -2,6 +2,20 @@
 
 This guide walks you through setting up FitLife for both **local** and **hosted** demos.
 
+## Demo operator access
+
+Catalog create, update, and delete operations require the `Operator` role.
+Self-registration always creates a member session. In Development only, a
+seeded demo account can be granted operator access through server-side
+configuration:
+
+```powershell
+$env:DemoAuthorization__OperatorEmails__0 = "sarah.johnson@example.com"
+```
+
+Do not configure this demo allowlist in production. Log in after setting the
+value so the server can issue a new role-bearing token.
+
 ## 📋 Prerequisites
 
 ### Local Demo
