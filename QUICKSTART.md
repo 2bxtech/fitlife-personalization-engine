@@ -94,9 +94,13 @@ taskkill /PID <PID> /F  # Kill it
 ## Hosted Demo
 
 See `DEMO_SETUP.md` for:
-- Azure deployment (45 min, ~$50/mo)
-- Railway.app deployment (15 min, free tier)
-- GitHub Actions CI/CD setup
+- local and containerized demo setup
+- illustrative Azure and managed-platform deployment guidance
+- GitHub Actions validation and disabled deployment-stage configuration
+
+There is no verified public hosted environment yet. Hosting availability,
+pricing, and setup time vary by provider and are intentionally not estimated
+here.
 
 ---
 

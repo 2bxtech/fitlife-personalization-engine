@@ -1,4 +1,4 @@
-name: Deploy FitLife to Azure
+name: FitLife CI and Disabled Azure Deployment
 
 on:
   push:
@@ -41,7 +41,7 @@ jobs:
       run: dotnet test --no-build --verbosity normal --configuration Release
 
   test-frontend:
-    name: Frontend Lint & Tests
+    name: Frontend Lint, Tests & Build
     runs-on: ubuntu-latest
     
     steps:
@@ -60,15 +60,19 @@ jobs:
       working-directory: fitlife-web
 
     - name: Lint
-      run: npx eslint src/ --max-warnings 50
+      run: npm run lint
       working-directory: fitlife-web
 
     - name: Run tests
-      run: npx vitest run
+      run: npm test
       working-directory: fitlife-web
 
-    - name: Type check
-      run: npx vue-tsc --noEmit
+    - name: Build production frontend
+      run: npm run build
+      working-directory: fitlife-web
+
+    - name: Audit production dependencies
+      run: npm audit --omit=dev --audit-level=high
       working-directory: fitlife-web
 
   build-and-push-api:

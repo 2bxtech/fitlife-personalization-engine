@@ -20,7 +20,15 @@ Domain insight: gym-goers are often loyal to specific instructors, not just clas
 Short enough that booking a class or updating preferences feels responsive (cache invalidates on those events anyway). Long enough that we're not regenerating constantly. The TTL is a fallback — explicit invalidation handles the important state changes.
 
 ### Why IHostedService for background workers instead of a separate service?
-For this scale, co-locating workers with the API simplifies deployment and monitoring. Each worker (event consumer, rec generator, user profiler) runs on its own thread with independent error handling. If this needed to scale independently, we'd extract to separate deployments — but that's premature optimization for a demo system.
+For a single-instance demo, co-locating workers with the API simplifies local
+deployment and monitoring. Each API process starts an event consumer,
+recommendation generator, and user profiler. The event consumers can share work
+through a Kafka consumer group, but the scheduled generator and profiler do not
+currently have leader election or a distributed lease. They must be disabled,
+coordinated, or extracted into separately scaled workers before running multiple
+API replicas. The Kubernetes manifests are therefore configured architecture
+assets, not evidence that the current worker topology is safe at horizontal
+scale.
 
 ### Why validate EventType against a static class instead of accepting any string?
 Defense against garbage data. If the frontend sends `eventType: "clck"` (typo), we reject it immediately rather than polluting the interactions table with unprocessable events. The `EventTypes` static class acts as a schema contract between frontend and backend.

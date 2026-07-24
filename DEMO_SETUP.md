@@ -409,7 +409,7 @@ Similar process to Railway:
 ### 5-Minute Demo Flow
 
 **Intro (30 seconds)**:
-> "FitLife is an AI-powered gym class recommendation system that uses a 9-factor scoring algorithm to personalize recommendations based on user preferences, fitness level, historical behavior, and real-time availability."
+> "FitLife is an explainable, deterministic gym class recommendation system that uses a 9-factor scoring algorithm to personalize recommendations based on user preferences, fitness level, historical behavior, and real-time availability."
 
 **Login (30 seconds)**:
 - Login as Sarah Johnson (Yoga Enthusiast)
@@ -437,7 +437,7 @@ Similar process to Railway:
 - Show caching strategy (Redis inspection)
 
 **Wrap-up (30 seconds)**:
-> "FitLife demonstrates event-driven architecture, caching strategies, background job processing, and personalization algorithms - all production-ready patterns for real-world recommendation systems."
+> "FitLife demonstrates event-driven architecture, caching strategies, background job processing, and explainable personalization using production-oriented patterns."
 
 ---
 
@@ -447,7 +447,7 @@ Similar process to Railway:
 - **Event-Driven**: User actions → Kafka → Background workers → Database
 - **Caching Layer**: Redis with 10-min TTL for fast recommendations
 - **Batch Processing**: Recommendations generated every 10 minutes for all active users
-- **Kubernetes-Ready**: HPA, health checks, graceful shutdown
+- **Kubernetes Assets**: configured HPA, probes, and graceful shutdown; not verified in a live cluster
 
 ### Algorithm Highlights
 - **9 Factors**: Fitness level, preferences, instructor, time, rating, availability, segment, recency, popularity
@@ -458,8 +458,8 @@ Similar process to Railway:
 ### Tech Stack
 - **Backend**: .NET 8, EF Core, Kafka, Redis
 - **Frontend**: Vue 3, TypeScript, Pinia, Tailwind CSS
-- **Infrastructure**: Docker, Kubernetes, Azure (AKS, ACR, SQL)
-- **CI/CD**: GitHub Actions (automated testing, build, deploy)
+- **Infrastructure**: Docker, Kubernetes manifests (designed, not currently deployed), Azure (ACR, SQL)
+- **CI/CD**: GitHub Actions validates pushes to `main` and `development` plus pull requests to `main`; image build/push/deploy stages are configured but disabled pending infrastructure provisioning
 
 ---
 

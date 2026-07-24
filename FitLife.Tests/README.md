@@ -1,44 +1,46 @@
 # FitLife.Tests
 
-Test project for the FitLife Personalization Engine.
+Automated unit and API integration tests for the FitLife Personalization Engine.
 
-## Purpose
+## Current coverage
 
-This test project will contain unit and integration tests for the core recommendation logic.
+- Nine-factor scoring behavior and boundaries.
+- Recommendation and infrastructure behavior.
+- Authentication and controller API flows.
+- Class browsing and booking API behavior.
+- Selected cross-user profile authorization behavior.
 
-## Test Categories
+The suite currently contains 50 tests. Treat that number as point-in-time
+evidence; run the suite for the current count.
 
-### Phase 3 Tests (To Be Implemented)
-- **ScoringEngineTests** - Test the 9-factor recommendation algorithm
-- **RecommendationServiceTests** - Test caching and recommendation generation
-- **UserEventTests** - Test event validation and domain logic
+## Run
 
-### Phase 6 Tests (Integration)
-- End-to-end recommendation flow
-- Kafka event processing
-- Cache invalidation scenarios
-
-## Running Tests
+From the repository root:
 
 ```bash
-# Run all tests
-dotnet test
-
-# Run specific test class
-dotnet test --filter "FullyQualifiedName~ScoringEngineTests"
-
-# Run with coverage (after adding coverlet.collector)
-dotnet test --collect:"XPlat Code Coverage"
+dotnet test FitLife.sln --configuration Release
 ```
 
-## Test Dependencies
+Run a focused class:
 
-- **xUnit** - Testing framework
-- **Moq** - Mocking library for dependencies
-- **FluentAssertions** - Readable assertions
+```bash
+dotnet test FitLife.Tests/FitLife.Tests.csproj \
+  --filter "FullyQualifiedName~ScoringEngineTests"
+```
 
-## Notes
+Run the complete repository verification on PowerShell:
 
-- Tests for ScoringEngine will be critical as this contains core business logic
-- Integration tests will be added in Phase 6 before production deployment
-- Current placeholder test verifies infrastructure is working
+```powershell
+./scripts/verify.ps1
+```
+
+## Known gaps
+
+- Kafka consumer behavior is not integration-tested against a broker.
+- Redis failure and cache-invalidation behavior need deeper integration
+  coverage.
+- Booking uniqueness and concurrent last-seat behavior are not enforced yet.
+- SQL Server-specific invariants require coverage beyond the EF in-memory test
+  provider.
+
+These gaps are tracked in the private phased implementation plan.
