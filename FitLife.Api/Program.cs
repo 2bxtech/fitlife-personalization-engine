@@ -99,6 +99,8 @@ builder.Services.AddScoped<IRecommendationService, RecommendationService>();
 builder.Services.AddSingleton<KafkaProducer>();
 builder.Services.AddSingleton<IEventPublisher>(sp =>
     sp.GetRequiredService<KafkaProducer>());
+builder.Services.AddSingleton<IDeadLetterPublisher>(sp =>
+    sp.GetRequiredService<KafkaProducer>());
 
 // Register Redis cache service (singleton - connection pooling)
 builder.Services.AddSingleton<RedisCacheService>();
@@ -271,7 +273,13 @@ if (app.Environment.IsDevelopment())
     });
 }
 
-app.UseHttpsRedirection();
+// Local Vite development proxies to the HTTP launch profile. Redirecting its
+// CORS preflight to HTTPS makes browsers reject the request before CORS runs.
+if (!app.Environment.IsDevelopment()
+    && !app.Environment.IsEnvironment("Testing"))
+{
+    app.UseHttpsRedirection();
+}
 
 app.UseCors("AllowFrontend");
 

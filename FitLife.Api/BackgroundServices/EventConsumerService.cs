@@ -16,6 +16,7 @@ namespace FitLife.Api.BackgroundServices;
 /// </summary>
 public class EventConsumerService : BackgroundService
 {
+    private const string DeadLetterTopic = "user-events-dlq";
     private readonly ILogger<EventConsumerService> _logger;
     private readonly IConfiguration _configuration;
     private readonly IServiceProvider _serviceProvider;
@@ -40,6 +41,10 @@ public class EventConsumerService : BackgroundService
             _logger.LogInformation("EventConsumerService is disabled in configuration");
             return;
         }
+
+        // Kafka's Consume API is synchronous. Yield once so BackgroundService
+        // startup cannot block the HTTP host when the broker is unavailable.
+        await Task.Yield();
 
         var bootstrapServers = _configuration["Kafka:BootstrapServers"]
             ?? throw new InvalidOperationException("Kafka:BootstrapServers not configured");
@@ -84,7 +89,7 @@ public class EventConsumerService : BackgroundService
 
                 if (consumeResult != null)
                 {
-                    await ProcessEventAsync(consumeResult.Message, stoppingToken);
+                    await ProcessWithRetryAsync(consumeResult, stoppingToken);
 
                     // Manual commit after successful processing
                     try
@@ -121,7 +126,89 @@ public class EventConsumerService : BackgroundService
     /// <summary>
     /// Processes a single Kafka event message and stores it in the database
     /// </summary>
-    internal async Task ProcessEventAsync(Message<string, string> message, CancellationToken cancellationToken)
+    internal async Task ProcessWithRetryAsync(
+        ConsumeResult<string, string> consumeResult,
+        CancellationToken cancellationToken)
+    {
+        var maxAttempts = Math.Clamp(
+            _configuration.GetValue("BackgroundWorkers:EventConsumer:MaxAttempts", 3),
+            1,
+            10);
+        var retryDelayMilliseconds = Math.Clamp(
+            _configuration.GetValue(
+                "BackgroundWorkers:EventConsumer:RetryDelayMilliseconds",
+                250),
+            0,
+            30_000);
+        string? eventId = null;
+
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                var outcome = await ProcessEventAsync(
+                    consumeResult.Message,
+                    cancellationToken);
+                eventId = outcome.EventId;
+                if (outcome.IsSuccess)
+                    return;
+
+                await PublishDeadLetterAsync(
+                    consumeResult,
+                    outcome.Disposition!,
+                    eventId,
+                    attempt,
+                    cancellationToken);
+                return;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex) when (attempt < maxAttempts)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Event processing attempt {Attempt}/{MaxAttempts} failed at " +
+                    "{Topic}[{Partition}]@{Offset}",
+                    attempt,
+                    maxAttempts,
+                    consumeResult.Topic,
+                    consumeResult.Partition.Value,
+                    consumeResult.Offset.Value);
+
+                if (retryDelayMilliseconds > 0)
+                {
+                    await Task.Delay(
+                        TimeSpan.FromMilliseconds(
+                            retryDelayMilliseconds * attempt),
+                        cancellationToken);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Event processing exhausted {Attempts} attempts at " +
+                    "{Topic}[{Partition}]@{Offset}",
+                    maxAttempts,
+                    consumeResult.Topic,
+                    consumeResult.Partition.Value,
+                    consumeResult.Offset.Value);
+                await PublishDeadLetterAsync(
+                    consumeResult,
+                    "retries-exhausted",
+                    eventId,
+                    maxAttempts,
+                    cancellationToken);
+                return;
+            }
+        }
+    }
+
+    internal async Task<EventProcessingOutcome> ProcessEventAsync(
+        Message<string, string> message,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -132,8 +219,14 @@ public class EventConsumerService : BackgroundService
                 _logger.LogWarning(
                     "Failed to deserialize event for key {MessageKey}",
                     message.Key);
-                return;
+                return EventProcessingOutcome.DeadLetter("null-payload");
             }
+
+            var contractError = ValidateEvent(userEvent);
+            if (contractError != null)
+                return EventProcessingOutcome.DeadLetter(
+                    contractError,
+                    userEvent.EventId);
 
             _logger.LogDebug(
                 "Processing event: User={UserId}, Item={ItemId}, Type={EventType}",
@@ -164,32 +257,35 @@ public class EventConsumerService : BackgroundService
                     _logger.LogInformation(
                         "Ignoring duplicate event {EventId}",
                         userEvent.EventId);
-                    return;
                 }
-
-                interaction.EventId = userEvent.EventId;
-                await interactionRepository.AddAsync(interaction);
-
-                try
+                else
                 {
-                    await interactionRepository.SaveChangesAsync();
-                }
-                catch (DbUpdateException ex) when (IsDuplicateEventId(ex))
-                {
-                    // Lost the race against another delivery of the same event
-                    // (redelivery after a crash/rebalance, or a concurrent
-                    // consumer). The unique EventId index is the source of
-                    // truth here, not the existence check above, so this is
-                    // an expected duplicate, not a failure to retry.
-                    _logger.LogInformation(
-                        "Ignoring duplicate event {EventId} (unique constraint)",
-                        userEvent.EventId);
-                    return;
-                }
+                    var stored = true;
+                    interaction.EventId = userEvent.EventId;
+                    await interactionRepository.AddAsync(interaction);
 
-                _logger.LogInformation(
-                    "Stored interaction: {InteractionId} - User={UserId}, Event={EventType}",
-                    interaction.Id, interaction.UserId, interaction.EventType);
+                    try
+                    {
+                        await interactionRepository.SaveChangesAsync();
+                    }
+                    catch (DbUpdateException ex) when (IsDuplicateEventId(ex))
+                    {
+                        stored = false;
+                        // The unique EventId index is the final concurrency
+                        // boundary. Continue to idempotent cache invalidation
+                        // so a prior post-write failure can recover.
+                        _logger.LogInformation(
+                            "Ignoring duplicate event {EventId} (unique constraint)",
+                            userEvent.EventId);
+                    }
+
+                    if (stored)
+                    {
+                        _logger.LogInformation(
+                            "Stored interaction: {InteractionId} - User={UserId}, Event={EventType}",
+                            interaction.Id, interaction.UserId, interaction.EventType);
+                    }
+                }
             }
 
             // Check if cache invalidation is needed (for Book, Cancel, Complete, Rate events)
@@ -205,6 +301,8 @@ public class EventConsumerService : BackgroundService
                         userEvent.UserId, userEvent.EventType);
                 }
             }
+
+            return EventProcessingOutcome.Success(userEvent.EventId);
         }
         catch (JsonException ex)
         {
@@ -212,6 +310,7 @@ public class EventConsumerService : BackgroundService
                 ex,
                 "Failed to deserialize event JSON for key {MessageKey}",
                 message.Key);
+            return EventProcessingOutcome.DeadLetter("malformed-json");
         }
         catch (Exception ex)
         {
@@ -221,6 +320,60 @@ public class EventConsumerService : BackgroundService
                 message.Key);
             throw; // Re-throw to prevent commit (will be retried)
         }
+    }
+
+    private async Task PublishDeadLetterAsync(
+        ConsumeResult<string, string> consumeResult,
+        string disposition,
+        string? eventId,
+        int attempts,
+        CancellationToken cancellationToken)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var publisher =
+            scope.ServiceProvider.GetRequiredService<IDeadLetterPublisher>();
+        var deadLetter = new DeadLetterEvent
+        {
+            SourceTopic = consumeResult.Topic,
+            SourcePartition = consumeResult.Partition.Value,
+            SourceOffset = consumeResult.Offset.Value,
+            MessageKey = consumeResult.Message.Key ?? string.Empty,
+            EventId = eventId,
+            Disposition = disposition,
+            Attempts = attempts
+        };
+
+        await publisher.PublishDeadLetterAsync(
+            DeadLetterTopic,
+            deadLetter.MessageKey,
+            deadLetter,
+            cancellationToken);
+    }
+
+    private static string? ValidateEvent(UserEvent userEvent)
+    {
+        if (userEvent.SchemaVersion != 1)
+            return "unsupported-schema";
+        if (!Guid.TryParse(userEvent.EventId, out _))
+            return "invalid-event-id";
+        if (string.IsNullOrWhiteSpace(userEvent.UserId)
+            || string.IsNullOrWhiteSpace(userEvent.ItemId)
+            || userEvent.ItemId.Length > 200
+            || string.IsNullOrWhiteSpace(userEvent.ItemType)
+            || userEvent.ItemType.Length > 50
+            || !EventTypes.IsValid(userEvent.EventType))
+            return "invalid-contract";
+
+        var now = DateTime.UtcNow;
+        if (userEvent.OccurredAt < now.AddHours(-24)
+            || userEvent.OccurredAt > now.AddMinutes(5))
+            return "invalid-occurred-at";
+        if (userEvent.Metadata != null
+            && JsonSerializer.SerializeToUtf8Bytes(userEvent.Metadata).Length
+            > 8 * 1024)
+            return "metadata-too-large";
+
+        return null;
     }
 
     private static bool IsDuplicateEventId(DbUpdateException ex) =>
@@ -242,4 +395,18 @@ public class EventConsumerService : BackgroundService
 
         base.Dispose();
     }
+}
+
+internal sealed record EventProcessingOutcome(
+    bool IsSuccess,
+    string? Disposition,
+    string? EventId)
+{
+    public static EventProcessingOutcome Success(string eventId) =>
+        new(true, null, eventId);
+
+    public static EventProcessingOutcome DeadLetter(
+        string disposition,
+        string? eventId = null) =>
+        new(false, disposition, eventId);
 }

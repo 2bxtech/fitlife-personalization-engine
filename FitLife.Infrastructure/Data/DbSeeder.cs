@@ -23,32 +23,83 @@ public class DbSeeder
     {
         try
         {
-            // Check if already seeded
-            if (await _context.Users.AnyAsync())
-            {
-                _logger.LogInformation("Database already seeded, skipping...");
-                return;
-            }
-
             _logger.LogInformation("Starting database seeding...");
 
-            // Seed Users
             var users = CreateSampleUsers();
-            await _context.Users.AddRangeAsync(users);
-            await _context.SaveChangesAsync();
-            _logger.LogInformation("Seeded {Count} users", users.Count);
-
-            // Seed Classes
             var classes = CreateSampleClasses();
-            await _context.Classes.AddRangeAsync(classes);
-            await _context.SaveChangesAsync();
-            _logger.LogInformation("Seeded {Count} classes", classes.Count);
+            var sampleUserIds = users.Select(user => user.Id).ToList();
+            var sampleEmails = users.Select(user => user.Email).ToList();
+            var existingUsers = await _context.Users
+                .Where(user =>
+                    sampleUserIds.Contains(user.Id)
+                    || sampleEmails.Contains(user.Email))
+                .Select(user => new { user.Id, user.Email })
+                .ToListAsync();
+            var missingUsers = users
+                .Where(user =>
+                    !existingUsers.Any(existing =>
+                        existing.Id == user.Id
+                        || existing.Email == user.Email))
+                .ToList();
+            if (missingUsers.Count > 0)
+            {
+                await _context.Users.AddRangeAsync(missingUsers);
+                await _context.SaveChangesAsync();
+            }
+            _logger.LogInformation("Seeded {Count} missing demo users", missingUsers.Count);
 
-            // Seed Interactions (user activity)
-            var interactions = CreateSampleInteractions(users, classes);
-            await _context.Interactions.AddRangeAsync(interactions);
-            await _context.SaveChangesAsync();
-            _logger.LogInformation("Seeded {Count} interactions", interactions.Count);
+            var sampleClassIds = classes.Select(gymClass => gymClass.Id).ToList();
+            var existingClasses = await _context.Classes
+                .Where(gymClass => sampleClassIds.Contains(gymClass.Id))
+                .ToListAsync();
+            var missingClasses = classes
+                .Where(gymClass =>
+                    !existingClasses.Any(existing => existing.Id == gymClass.Id))
+                .ToList();
+            if (missingClasses.Count > 0)
+            {
+                await _context.Classes.AddRangeAsync(missingClasses);
+            }
+            _logger.LogInformation("Seeded {Count} missing demo classes", missingClasses.Count);
+
+            var refreshedClassCount = 0;
+            foreach (var existingClass in existingClasses
+                         .Where(gymClass => gymClass.StartTime <= DateTime.UtcNow))
+            {
+                var currentSchedule = classes.Single(
+                    gymClass => gymClass.Id == existingClass.Id);
+                existingClass.StartTime = currentSchedule.StartTime;
+                existingClass.UpdatedAt = DateTime.UtcNow;
+                refreshedClassCount++;
+            }
+            if (missingClasses.Count > 0 || refreshedClassCount > 0)
+                await _context.SaveChangesAsync();
+            _logger.LogInformation(
+                "Refreshed {Count} stale demo class start times",
+                refreshedClassCount);
+
+            var persistedSampleUserIds = await _context.Users
+                .Where(user => sampleUserIds.Contains(user.Id))
+                .Select(user => user.Id)
+                .ToListAsync();
+            var hasDemoInteractions = await _context.Interactions.AnyAsync(
+                interaction => persistedSampleUserIds.Contains(interaction.UserId));
+            if (!hasDemoInteractions)
+            {
+                var interactions = CreateSampleInteractions(users, classes)
+                    .Where(interaction =>
+                        persistedSampleUserIds.Contains(interaction.UserId))
+                    .ToList();
+                await _context.Interactions.AddRangeAsync(interactions);
+                await _context.SaveChangesAsync();
+                _logger.LogInformation(
+                    "Seeded {Count} demo interactions",
+                    interactions.Count);
+            }
+            else
+            {
+                _logger.LogInformation("Demo interactions already exist, skipping...");
+            }
 
             _logger.LogInformation("Database seeding completed successfully!");
         }

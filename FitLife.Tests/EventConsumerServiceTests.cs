@@ -11,11 +11,152 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 
 namespace FitLife.Tests;
 
 public class EventConsumerServiceTests
 {
+    [Fact]
+    public async Task MalformedEvent_IsDeadLetteredWithoutRetrying()
+    {
+        var repository = new Mock<IInteractionRepository>();
+        var deadLetterPublisher = new RecordingDeadLetterPublisher();
+        await using var provider = BuildProvider(
+            repository.Object,
+            deadLetterPublisher);
+        var service = CreateService(provider);
+        var consumeResult = ConsumeResultFor("{not-json");
+
+        await service.ProcessWithRetryAsync(
+            consumeResult,
+            CancellationToken.None);
+
+        deadLetterPublisher.Published.Should().ContainSingle();
+        deadLetterPublisher.Published[0].Disposition.Should().Be("malformed-json");
+        deadLetterPublisher.Published[0].Attempts.Should().Be(1);
+        deadLetterPublisher.Published[0].SourceOffset.Should().Be(42);
+        repository.Verify(
+            item => item.SaveChangesAsync(),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task UnsupportedSchema_IsDeadLetteredWithoutPersistence()
+    {
+        var repository = new Mock<IInteractionRepository>();
+        var deadLetterPublisher = new RecordingDeadLetterPublisher();
+        await using var provider = BuildProvider(
+            repository.Object,
+            deadLetterPublisher);
+        var service = CreateService(provider);
+        var userEvent = ValidEvent();
+        userEvent.SchemaVersion = 2;
+
+        await service.ProcessWithRetryAsync(
+            ConsumeResultFor(JsonSerializer.Serialize(userEvent)),
+            CancellationToken.None);
+
+        deadLetterPublisher.Published.Should().ContainSingle();
+        deadLetterPublisher.Published[0].Disposition
+            .Should().Be("unsupported-schema");
+        deadLetterPublisher.Published[0].EventId.Should().Be(userEvent.EventId);
+        repository.Verify(
+            item => item.SaveChangesAsync(),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task TransientFailure_IsRetriedThreeTimesThenDeadLettered()
+    {
+        var repository = new Mock<IInteractionRepository>();
+        repository
+            .Setup(item => item.ExistsByEventIdAsync(It.IsAny<string>()))
+            .ReturnsAsync(false);
+        repository
+            .Setup(item => item.AddAsync(It.IsAny<Interaction>()))
+            .ReturnsAsync((Interaction interaction) => interaction);
+        repository
+            .Setup(item => item.SaveChangesAsync())
+            .ThrowsAsync(new InvalidOperationException("transient database failure"));
+        var deadLetterPublisher = new RecordingDeadLetterPublisher();
+        await using var provider = BuildProvider(
+            repository.Object,
+            deadLetterPublisher);
+        var service = CreateService(provider);
+
+        await service.ProcessWithRetryAsync(
+            ConsumeResultFor(JsonSerializer.Serialize(ValidEvent())),
+            CancellationToken.None);
+
+        repository.Verify(
+            item => item.SaveChangesAsync(),
+            Times.Exactly(3));
+        deadLetterPublisher.Published.Should().ContainSingle();
+        deadLetterPublisher.Published[0].Disposition
+            .Should().Be("retries-exhausted");
+        deadLetterPublisher.Published[0].Attempts.Should().Be(3);
+    }
+
+    [Fact]
+    public async Task DeadLetterPublishFailure_IsRethrownSoOffsetIsNotCommitted()
+    {
+        var repository = new Mock<IInteractionRepository>();
+        await using var provider = BuildProvider(
+            repository.Object,
+            new FailingDeadLetterPublisher());
+        var service = CreateService(provider);
+
+        var act = () => service.ProcessWithRetryAsync(
+            ConsumeResultFor("{not-json"),
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("dead-letter unavailable");
+    }
+
+    [Fact]
+    public async Task CacheFailure_RetriesInvalidationWithoutDuplicatingInteraction()
+    {
+        var repository = new Mock<IInteractionRepository>();
+        repository
+            .SetupSequence(item => item.ExistsByEventIdAsync(It.IsAny<string>()))
+            .ReturnsAsync(false)
+            .ReturnsAsync(true);
+        repository
+            .Setup(item => item.AddAsync(It.IsAny<Interaction>()))
+            .ReturnsAsync((Interaction interaction) => interaction);
+        repository
+            .Setup(item => item.SaveChangesAsync())
+            .ReturnsAsync(1);
+        var recommendations = new Mock<IRecommendationService>();
+        recommendations
+            .SetupSequence(service =>
+                service.InvalidateCacheAsync("user-1"))
+            .ThrowsAsync(new InvalidOperationException("cache unavailable"))
+            .Returns(Task.CompletedTask);
+        var deadLetterPublisher = new RecordingDeadLetterPublisher();
+        await using var provider = BuildProvider(
+            repository.Object,
+            deadLetterPublisher,
+            recommendations.Object);
+        var service = CreateService(provider);
+        var userEvent = ValidEvent();
+        userEvent.EventType = EventTypes.Book;
+
+        await service.ProcessWithRetryAsync(
+            ConsumeResultFor(JsonSerializer.Serialize(userEvent)),
+            CancellationToken.None);
+
+        repository.Verify(
+            item => item.SaveChangesAsync(),
+            Times.Once);
+        recommendations.Verify(
+            item => item.InvalidateCacheAsync("user-1"),
+            Times.Exactly(2));
+        deadLetterPublisher.Published.Should().BeEmpty();
+    }
+
     [SqlServerFact]
     public async Task ConcurrentDuplicateDelivery_DoesNotThrowAndStoresExactlyOneInteraction()
     {
@@ -101,5 +242,82 @@ public class EventConsumerServiceTests
 
         await gate;
         await consumerService.ProcessEventAsync(message, CancellationToken.None);
+    }
+
+    private static ServiceProvider BuildProvider(
+        IInteractionRepository repository,
+        IDeadLetterPublisher deadLetterPublisher,
+        IRecommendationService? recommendationService = null)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(repository);
+        services.AddSingleton(deadLetterPublisher);
+        if (recommendationService != null)
+            services.AddSingleton(recommendationService);
+        return services.BuildServiceProvider();
+    }
+
+    private static EventConsumerService CreateService(
+        IServiceProvider provider) =>
+        new(
+            NullLogger<EventConsumerService>.Instance,
+            new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["BackgroundWorkers:EventConsumer:MaxAttempts"] = "3",
+                    ["BackgroundWorkers:EventConsumer:RetryDelayMilliseconds"] = "0"
+                })
+                .Build(),
+            provider);
+
+    private static ConsumeResult<string, string> ConsumeResultFor(string value) =>
+        new()
+        {
+            Topic = "user-events",
+            Partition = new Partition(2),
+            Offset = new Offset(42),
+            Message = new Message<string, string>
+            {
+                Key = "user-1",
+                Value = value
+            }
+        };
+
+    private static UserEvent ValidEvent() => new()
+    {
+        EventId = Guid.NewGuid().ToString(),
+        UserId = "user-1",
+        ItemId = "class-1",
+        ItemType = "Class",
+        EventType = EventTypes.View,
+        OccurredAt = DateTime.UtcNow,
+        Timestamp = DateTime.UtcNow
+    };
+
+    private sealed class RecordingDeadLetterPublisher
+        : IDeadLetterPublisher
+    {
+        public List<DeadLetterEvent> Published { get; } = new();
+
+        public Task PublishDeadLetterAsync(
+            string topic,
+            string key,
+            DeadLetterEvent deadLetterEvent,
+            CancellationToken cancellationToken = default)
+        {
+            Published.Add(deadLetterEvent);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FailingDeadLetterPublisher
+        : IDeadLetterPublisher
+    {
+        public Task PublishDeadLetterAsync(
+            string topic,
+            string key,
+            DeadLetterEvent deadLetterEvent,
+            CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("dead-letter unavailable");
     }
 }

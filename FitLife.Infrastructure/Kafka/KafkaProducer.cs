@@ -10,7 +10,7 @@ namespace FitLife.Infrastructure.Kafka;
 /// <summary>
 /// Kafka producer service for publishing user events to the event stream
 /// </summary>
-public class KafkaProducer : IEventPublisher, IDisposable
+public class KafkaProducer : IEventPublisher, IDeadLetterPublisher, IDisposable
 {
     private readonly IProducer<string, string> _producer;
     private readonly ILogger<KafkaProducer> _logger;
@@ -56,8 +56,7 @@ public class KafkaProducer : IEventPublisher, IDisposable
     }
 
     /// <summary>
-    /// Publishes an event to the specified Kafka topic
-    /// Fire-and-forget pattern for API performance
+    /// Publishes an event and waits for Kafka delivery acknowledgement.
     /// </summary>
     /// <param name="topic">Topic name (e.g., "user-events")</param>
     /// <param name="key">Partition key - use UserId for ordered processing per user</param>
@@ -93,6 +92,29 @@ public class KafkaProducer : IEventPublisher, IDisposable
             _logger.LogError(ex, "Error producing message to topic {Topic}", topic);
             throw;
         }
+    }
+
+    public async Task PublishDeadLetterAsync(
+        string topic,
+        string key,
+        DeadLetterEvent deadLetterEvent,
+        CancellationToken cancellationToken = default)
+    {
+        var message = new Message<string, string>
+        {
+            Key = key,
+            Value = JsonSerializer.Serialize(deadLetterEvent),
+            Timestamp = new Timestamp(DateTime.UtcNow)
+        };
+
+        var result = await _producer.ProduceAsync(topic, message, cancellationToken);
+        _logger.LogWarning(
+            "Dead-letter record {DeadLetterId} published to {Topic} " +
+            "[partition {Partition}, offset {Offset}]",
+            deadLetterEvent.DeadLetterId,
+            result.Topic,
+            result.Partition.Value,
+            result.Offset.Value);
     }
 
     /// <summary>
