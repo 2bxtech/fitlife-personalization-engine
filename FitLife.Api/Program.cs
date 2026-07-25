@@ -9,6 +9,7 @@ using FitLife.Infrastructure.Cache;
 using FitLife.Infrastructure.Data;
 using FitLife.Infrastructure.Kafka;
 using FitLife.Infrastructure.Repositories;
+using FitLife.Infrastructure.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -88,6 +89,7 @@ builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IClassRepository, ClassRepository>();
 builder.Services.AddScoped<IInteractionRepository, InteractionRepository>();
 builder.Services.AddScoped<IRecommendationRepository, RecommendationRepository>();
+builder.Services.AddScoped<IBookingService, BookingService>();
 
 // Register core services
 builder.Services.AddScoped<IScoringEngine, ScoringEngine>();

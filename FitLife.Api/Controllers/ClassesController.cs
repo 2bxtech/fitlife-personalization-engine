@@ -5,7 +5,7 @@ using FitLife.Core.Interfaces;
 using FitLife.Core.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Text.Json;
+using FitLife.Core.Services;
 
 namespace FitLife.Api.Controllers;
 
@@ -14,19 +14,16 @@ namespace FitLife.Api.Controllers;
 public class ClassesController : ControllerBase
 {
     private readonly IClassRepository _classRepository;
-    private readonly IInteractionRepository _interactionRepository;
-    private readonly ICacheService _cacheService;
+    private readonly IBookingService _bookingService;
     private readonly ILogger<ClassesController> _logger;
 
     public ClassesController(
         IClassRepository classRepository,
-        IInteractionRepository interactionRepository,
-        ICacheService cacheService,
+        IBookingService bookingService,
         ILogger<ClassesController> logger)
     {
         _classRepository = classRepository;
-        _interactionRepository = interactionRepository;
-        _cacheService = cacheService;
+        _bookingService = bookingService;
         _logger = logger;
     }
 
@@ -152,7 +149,9 @@ public class ClassesController : ControllerBase
     /// </summary>
     [HttpPost("{id}/book")]
     [Authorize]
-    public async Task<ActionResult<ApiResponse<ClassDto>>> BookClass(string id)
+    public async Task<ActionResult<ApiResponse<ClassDto>>> BookClass(
+        string id,
+        [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey = null)
     {
         try
         {
@@ -160,43 +159,41 @@ public class ClassesController : ControllerBase
             if (userId == null)
                 return Unauthorized(new ApiResponse<ClassDto> { Success = false, Message = "User not authenticated" });
 
-            var classEntity = await _classRepository.GetByIdAsync(id);
-            if (classEntity == null)
+            if (idempotencyKey?.Length > 100)
+                return BadRequest(new ApiResponse<ClassDto>
+                {
+                    Success = false,
+                    Message = "Idempotency-Key must be 100 characters or fewer"
+                });
+
+            var result = await _bookingService.BookAsync(
+                userId,
+                id,
+                idempotencyKey,
+                HttpContext.RequestAborted);
+
+            if (result.Outcome == BookingOutcome.ClassNotFound)
                 return NotFound(new ApiResponse<ClassDto> { Success = false, Message = "Class not found" });
 
-            if (classEntity.CurrentEnrollment >= classEntity.Capacity)
+            if (result.Outcome == BookingOutcome.ClassFull)
                 return BadRequest(new ApiResponse<ClassDto> { Success = false, Message = "Class is full" });
 
-            // Increment enrollment
-            classEntity.CurrentEnrollment++;
-            classEntity.UpdatedAt = DateTime.UtcNow;
-            await _classRepository.UpdateAsync(classEntity);
-            await _classRepository.SaveChangesAsync();
-
-            // Create booking interaction record
-            var interaction = new Interaction
+            if (result.Outcome == BookingOutcome.Conflict)
             {
-                UserId = userId,
-                ItemId = id,
-                ItemType = "Class",
-                EventType = "Book",
-                Timestamp = DateTime.UtcNow,
-                Metadata = JsonSerializer.Serialize(new { source = "web", className = classEntity.Name })
-            };
-            await _interactionRepository.AddAsync(interaction);
-            await _interactionRepository.SaveChangesAsync();
-
-            // Invalidate recommendation cache
-            await _cacheService.DeleteAsync($"rec:{userId}");
-
-            _logger.LogInformation("User {UserId} booked class {ClassId}: {ClassName}",
-                userId, id, classEntity.Name);
+                return Conflict(new ApiResponse<ClassDto>
+                {
+                    Success = false,
+                    Message = "Booking conflicted with another request; refresh and retry"
+                });
+            }
 
             return Ok(new ApiResponse<ClassDto>
             {
                 Success = true,
-                Data = DtoMappers.MapToClassDto(classEntity),
-                Message = "Class booked successfully"
+                Data = DtoMappers.MapToClassDto(result.Class!),
+                Message = result.Outcome == BookingOutcome.AlreadyBooked
+                    ? "Class was already booked"
+                    : "Class booked successfully"
             });
         }
         catch (Exception ex)
