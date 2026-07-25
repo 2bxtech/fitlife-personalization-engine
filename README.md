@@ -182,9 +182,9 @@ $env:FITLIFE_SQLSERVER_TEST_CONNECTION = "<SQL Server test connection>"
 dotnet test FitLife.Tests --filter "FullyQualifiedName~BookingConcurrencyTests"
 ```
 
-The latest local gate completed with 97 backend tests and 18 frontend tests
-passing, including the SQL Server concurrency, rollback, and event-deduplication
-harnesses. This
+The latest backend gate completed with 102 tests passing, including the SQL
+Server concurrency, rollback, and event-deduplication harnesses. The unchanged
+frontend suite remains at 18 passing tests. This
 is local verification evidence, not a production performance or availability
 claim.
 
@@ -238,8 +238,9 @@ synthetic data. It is not intended to collect real health information.
 - Scheduled recommendation generation and user profiling.
 - Kubernetes manifests and horizontal-scaling configuration.
 
-The Kafka consumer still needs bounded retry and dead-letter handling, and
-scheduled workers are currently co-located with the API. Those workers must
+The Kafka consumer applies three bounded processing attempts and publishes
+metadata-only poison-event records to `user-events-dlq` before committing the
+source offset. Scheduled workers are still co-located with the API; they must
 receive an explicit singleton owner or separate deployment before horizontal
 API scaling is enabled.
 

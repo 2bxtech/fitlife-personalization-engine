@@ -265,6 +265,9 @@ User views class → trackClassView(classId)
     → Ignore an EventId already stored
     → Save EventId and interaction in SQL Server
     → Update user's last active timestamp
+    → Retry transient processing failures up to three times
+    → Publish poison-event metadata to user-events-dlq
+    → Require dead-letter acknowledgement before skipping poison input
     → Commit Kafka offset
     → [Later] RecommendationGeneratorService runs
     → Incorporates new interaction into scoring
