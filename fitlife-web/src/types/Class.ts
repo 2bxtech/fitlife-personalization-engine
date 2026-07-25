@@ -15,6 +15,7 @@ export interface Class {
   totalRatings: number
   weeklyBookings: number
   isActive: boolean
+  isBookedByCurrentUser: boolean
 }
 
 export interface ClassFilter {

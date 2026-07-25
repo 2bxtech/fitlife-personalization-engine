@@ -189,6 +189,40 @@ public sealed class BookingService : IBookingService
         return new BookingResult(BookingOutcome.Conflict);
     }
 
+    public async Task<HashSet<string>> GetActiveClassIdsAsync(
+        string userId,
+        IEnumerable<string> classIds,
+        CancellationToken cancellationToken = default)
+    {
+        var distinctClassIds = classIds.Distinct().ToList();
+        if (distinctClassIds.Count == 0)
+            return new HashSet<string>();
+
+        var activeClassIds = await _context.Bookings
+            .AsNoTracking()
+            .Where(booking => booking.UserId == userId
+                && booking.Status == BookingStatuses.Active
+                && distinctClassIds.Contains(booking.ClassId))
+            .Select(booking => booking.ClassId)
+            .ToListAsync(cancellationToken);
+
+        return activeClassIds.ToHashSet();
+    }
+
+    public async Task<HashSet<string>> GetActiveClassIdsAsync(
+        string userId,
+        CancellationToken cancellationToken = default)
+    {
+        var activeClassIds = await _context.Bookings
+            .AsNoTracking()
+            .Where(booking => booking.UserId == userId
+                && booking.Status == BookingStatuses.Active)
+            .Select(booking => booking.ClassId)
+            .ToListAsync(cancellationToken);
+
+        return activeClassIds.ToHashSet();
+    }
+
     private async Task<BookingResult?> FindExistingResultAsync(
         string userId,
         string classId,

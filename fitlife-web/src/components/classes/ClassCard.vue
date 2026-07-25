@@ -8,10 +8,12 @@ const props = defineProps<{
   classData: Class
   showRecommendationReason?: boolean
   recommendationReason?: string
+  actionPending?: boolean
 }>()
 
 const emit = defineEmits<{
   book: [classId: string]
+  cancel: [classId: string]
 }>()
 
 const authStore = useAuthStore()
@@ -53,17 +55,13 @@ async function handleView() {
   }
 }
 
-async function handleBook() {
-  emit('book', props.classData.id)
-  if (authStore.user) {
-    await recommendationStore.trackEvent({
-      userId: authStore.user.id,
-      itemId: props.classData.id,
-      itemType: 'Class',
-      eventType: 'Book',
-      metadata: { source: 'browse' }
-    })
+function handleBookingAction() {
+  if (props.classData.isBookedByCurrentUser) {
+    emit('cancel', props.classData.id)
+    return
   }
+
+  emit('book', props.classData.id)
 }
 
 onMounted(() => {
@@ -113,11 +111,24 @@ onMounted(() => {
     </div>
 
     <button 
-      :disabled="classData.currentEnrollment >= classData.capacity"
-      class="w-full px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-      @click="handleBook"
+      :disabled="actionPending || (!classData.isBookedByCurrentUser && classData.currentEnrollment >= classData.capacity)"
+      :class="[
+        'w-full px-4 py-2 text-white rounded-lg disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors',
+        classData.isBookedByCurrentUser
+          ? 'bg-red-600 hover:bg-red-700'
+          : 'bg-primary-600 hover:bg-primary-700'
+      ]"
+      @click="handleBookingAction"
     >
-      {{ classData.currentEnrollment >= classData.capacity ? 'Class Full' : 'Book Now' }}
+      {{
+        actionPending
+          ? 'Updating...'
+          : classData.isBookedByCurrentUser
+            ? 'Cancel Booking'
+            : classData.currentEnrollment >= classData.capacity
+              ? 'Class Full'
+              : 'Book Now'
+      }}
     </button>
   </div>
 </template>

@@ -6,14 +6,20 @@ import type { Class } from '@/types/Class'
 const props = defineProps<{
   classes: Class[]
   loading?: boolean
+  actionClassId?: string | null
 }>()
 
 const emit = defineEmits<{
   book: [classId: string]
+  cancel: [classId: string]
 }>()
 
 const handleBook = (classId: string) => {
   emit('book', classId)
+}
+
+const handleCancel = (classId: string) => {
+  emit('cancel', classId)
 }
 </script>
 
@@ -32,7 +38,9 @@ const handleBook = (classId: string) => {
         v-for="classItem in classes"
         :key="classItem.id"
         :class-data="classItem"
+        :action-pending="actionClassId === classItem.id"
         @book="handleBook"
+        @cancel="handleCancel"
       />
     </div>
   </div>

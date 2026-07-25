@@ -1,12 +1,16 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
 import { useClassStore } from '@/stores/classes'
+import { useRecommendationStore } from '@/stores/recommendations'
+import { useAuthStore } from '@/stores/auth'
 import { useToast } from '@/composables/useToast'
 import ClassFilter from '@/components/classes/ClassFilter.vue'
 import ClassList from '@/components/classes/ClassList.vue'
 import type { ClassFilter as ClassFilterType } from '@/types/Class'
 
 const classStore = useClassStore()
+const recommendationStore = useRecommendationStore()
+const authStore = useAuthStore()
 const toast = useToast()
 
 onMounted(async () => {
@@ -19,10 +23,29 @@ async function handleFilter(filters: ClassFilterType) {
 
 async function handleBook(classId: string) {
   try {
-    await classStore.bookClass(classId)
-    toast.success('Class booked successfully!')
+    const message = await classStore.bookClass(classId)
+    await refreshRecommendations()
+    toast.success(message)
   } catch (error: any) {
     toast.error(error.message || 'Failed to book class')
+  }
+}
+
+async function handleCancel(classId: string) {
+  try {
+    const message = await classStore.cancelBooking(classId)
+    await refreshRecommendations()
+    toast.success(message)
+  } catch (error: unknown) {
+    toast.error(
+      error instanceof Error ? error.message : 'Failed to cancel booking'
+    )
+  }
+}
+
+async function refreshRecommendations() {
+  if (authStore.user) {
+    await recommendationStore.fetchRecommendations(authStore.user.id, 10)
   }
 }
 </script>
@@ -46,7 +69,9 @@ async function handleBook(classId: string) {
       <ClassList 
         :classes="classStore.classes" 
         :loading="classStore.loading"
+        :action-class-id="classStore.actionClassId"
         @book="handleBook"
+        @cancel="handleCancel"
       />
     </div>
   </div>
