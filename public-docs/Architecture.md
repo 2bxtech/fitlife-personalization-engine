@@ -272,16 +272,20 @@ User views class → trackClassView(classId)
 ```
 User clicks "Book Now" button
     → POST /api/classes/{classId}/book
-    → Check if class is full
-    → Increment class.CurrentEnrollment
-    → Create a "Book" interaction directly
-    → Invalidate the user's recommendation cache
-    → Return success
+    → Return the existing active booking for a duplicate retry
+    → Check class capacity
+    → In one database transaction:
+        → Create the durable active booking
+        → Increment class.CurrentEnrollment
+        → Create one "Book" interaction
+    → After commit, invalidate the user's recommendation cache
+    → Return booked, already-booked, full, or conflict result
 ```
 
-The booking endpoint currently writes the interaction directly. Kafka event
-publishing is provided through the separate `/api/events` tracking flow; booking
-does not publish a second event.
+Clients may send an `Idempotency-Key` header (up to 100 characters). Active
+user/class uniqueness and idempotency-key uniqueness are database-enforced.
+Kafka event publishing remains available through the separate `/api/events`
+tracking flow; booking does not publish a second event.
 
 ## Scalability & Performance
 

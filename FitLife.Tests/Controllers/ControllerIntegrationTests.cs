@@ -318,6 +318,64 @@ public class ClassesControllerTests : IClassFixture<FitLifeWebApplicationFactory
     }
 
     [Fact]
+    public async Task BookClass_SequentialRetry_ReturnsStableResultWithoutDuplicateState()
+    {
+        var classId = $"retry_{Guid.NewGuid():N}";
+        await SeedClassAsync(classId, capacity: 30, enrollment: 5);
+
+        using var client = _factory.CreateClient();
+        var token = await GetAuthTokenAsync();
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", token);
+
+        var first = await client.PostAsync($"/api/classes/{classId}/book", null);
+        var retry = await client.PostAsync($"/api/classes/{classId}/book", null);
+
+        first.StatusCode.Should().Be(HttpStatusCode.OK);
+        retry.StatusCode.Should().Be(HttpStatusCode.OK);
+        var retryBody =
+            await retry.Content.ReadFromJsonAsync<ApiResponse<ClassDto>>(JsonOptions);
+        retryBody!.Message.Should().Be("Class was already booked");
+        retryBody.Data!.CurrentEnrollment.Should().Be(6);
+
+        using var scope = _factory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<FitLifeDbContext>();
+        context.Bookings.Count(booking =>
+            booking.ClassId == classId
+            && booking.Status == BookingStatuses.Active).Should().Be(1);
+        context.Interactions.Count(interaction =>
+            interaction.ItemId == classId
+            && interaction.EventType == "Book").Should().Be(1);
+    }
+
+    [Fact]
+    public async Task BookClass_IdempotencyKeyReusedForDifferentClass_ReturnsConflict()
+    {
+        var firstClassId = $"idem_first_{Guid.NewGuid():N}";
+        var secondClassId = $"idem_second_{Guid.NewGuid():N}";
+        await SeedClassAsync(firstClassId);
+        await SeedClassAsync(secondClassId);
+
+        using var client = _factory.CreateClient();
+        var token = await GetAuthTokenAsync();
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", token);
+        client.DefaultRequestHeaders.Add("Idempotency-Key", Guid.NewGuid().ToString("N"));
+
+        var first = await client.PostAsync($"/api/classes/{firstClassId}/book", null);
+        var conflictingRetry =
+            await client.PostAsync($"/api/classes/{secondClassId}/book", null);
+
+        first.StatusCode.Should().Be(HttpStatusCode.OK);
+        conflictingRetry.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        using var scope = _factory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<FitLifeDbContext>();
+        context.Classes.Single(entity => entity.Id == secondClassId)
+            .CurrentEnrollment.Should().Be(5);
+    }
+
+    [Fact]
     public async Task BookClass_NoAuth_ReturnsUnauthorized()
     {
         _client.DefaultRequestHeaders.Authorization = null;
