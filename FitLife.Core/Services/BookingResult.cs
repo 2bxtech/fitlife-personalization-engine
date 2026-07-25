@@ -6,6 +6,9 @@ public enum BookingOutcome
 {
     Booked,
     AlreadyBooked,
+    Cancelled,
+    AlreadyCancelled,
+    BookingNotFound,
     ClassNotFound,
     ClassFull,
     Conflict

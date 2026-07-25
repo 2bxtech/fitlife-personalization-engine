@@ -199,6 +199,11 @@ public class ClassesControllerTests : IClassFixture<FitLifeWebApplicationFactory
 
     private async Task<string> GetAuthTokenAsync()
     {
+        return (await GetAuthSessionAsync()).Token;
+    }
+
+    private async Task<(string Token, UserDto User)> GetAuthSessionAsync()
+    {
         var email = $"class_{Guid.NewGuid():N}@example.com";
         var response = await _client.PostAsJsonAsync("/api/auth/register", new RegisterUserDto
         {
@@ -209,7 +214,7 @@ public class ClassesControllerTests : IClassFixture<FitLifeWebApplicationFactory
             FitnessLevel = "Intermediate"
         });
         var body = await response.Content.ReadFromJsonAsync<ApiResponse<AuthResponseDto>>(JsonOptions);
-        return body!.Data!.Token;
+        return (body!.Data!.Token, body.Data.User!);
     }
 
     private async Task<string> GetOperatorTokenAsync()
@@ -416,6 +421,76 @@ public class ClassesControllerTests : IClassFixture<FitLifeWebApplicationFactory
 
         var response = await client.PostAsync("/api/classes/some-id/book", null);
 
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task CancelBooking_RepeatedRequest_RestoresSeatExactlyOnce()
+    {
+        var classId = $"cancel_{Guid.NewGuid():N}";
+        await SeedClassAsync(classId, capacity: 30, enrollment: 5);
+        var token = await GetAuthTokenAsync();
+        _client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", token);
+        (await _client.PostAsync($"/api/classes/{classId}/book", null))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var first = await _client.PostAsync($"/api/classes/{classId}/cancel", null);
+        var retry = await _client.PostAsync($"/api/classes/{classId}/cancel", null);
+
+        first.StatusCode.Should().Be(HttpStatusCode.OK);
+        retry.StatusCode.Should().Be(HttpStatusCode.OK);
+        var retryBody =
+            await retry.Content.ReadFromJsonAsync<ApiResponse<ClassDto>>(JsonOptions);
+        retryBody!.Message.Should().Be("Booking was already cancelled");
+        retryBody.Data!.CurrentEnrollment.Should().Be(5);
+
+        using var scope = _factory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<FitLifeDbContext>();
+        context.Bookings.Count(booking =>
+            booking.ClassId == classId
+            && booking.Status == BookingStatuses.Cancelled).Should().Be(1);
+        context.Interactions.Count(interaction =>
+            interaction.ItemId == classId
+            && interaction.EventType == "Cancel").Should().Be(1);
+    }
+
+    [Fact]
+    public async Task CancelBooking_OtherUsersBooking_ReturnsNotFoundWithoutChangingState()
+    {
+        var classId = $"cancel_owner_{Guid.NewGuid():N}";
+        await SeedClassAsync(classId, capacity: 30, enrollment: 5);
+        var owner = await GetAuthSessionAsync();
+        using (var ownerClient = _factory.CreateClient())
+        {
+            ownerClient.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", owner.Token);
+            (await ownerClient.PostAsync($"/api/classes/{classId}/book", null))
+                .StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        var otherToken = await GetAuthTokenAsync();
+        _client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", otherToken);
+        var response =
+            await _client.PostAsync($"/api/classes/{classId}/cancel", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        using var scope = _factory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<FitLifeDbContext>();
+        context.Bookings.Single(booking =>
+            booking.UserId == owner.User.Id
+            && booking.ClassId == classId).Status.Should().Be(BookingStatuses.Active);
+        context.Classes.Single(entity => entity.Id == classId)
+            .CurrentEnrollment.Should().Be(6);
+    }
+
+    [Fact]
+    public async Task CancelBooking_NoAuth_ReturnsUnauthorized()
+    {
+        using var client = _factory.CreateClient();
+        var response =
+            await client.PostAsync("/api/classes/some-id/cancel", null);
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
