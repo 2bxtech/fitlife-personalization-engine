@@ -182,8 +182,9 @@ $env:FITLIFE_SQLSERVER_TEST_CONNECTION = "<SQL Server test connection>"
 dotnet test FitLife.Tests --filter "FullyQualifiedName~BookingConcurrencyTests"
 ```
 
-The latest local Phase 2 gate completed with 90 backend tests and 18 frontend
-tests passing, including the SQL Server concurrency and rollback harnesses. This
+The latest local gate completed with 97 backend tests and 18 frontend tests
+passing, including the SQL Server concurrency, rollback, and event-deduplication
+harnesses. This
 is local verification evidence, not a production performance or availability
 claim.
 
@@ -232,14 +233,15 @@ synthetic data. It is not intended to collect real health information.
 
 ### Implemented, with further hardening planned
 
-- Kafka producer and consumer.
+- Kafka producer and consumer with a versioned event envelope, broker-acknowledged
+  publishing, and SQL-enforced event deduplication.
 - Scheduled recommendation generation and user profiling.
 - Kubernetes manifests and horizontal-scaling configuration.
 
-The Kafka consumer still needs durable event deduplication, and scheduled
-workers are currently co-located with the API. Those workers must receive an
-explicit singleton owner or separate deployment before horizontal API scaling
-is enabled.
+The Kafka consumer still needs bounded retry and dead-letter handling, and
+scheduled workers are currently co-located with the API. Those workers must
+receive an explicit singleton owner or separate deployment before horizontal
+API scaling is enabled.
 
 ### Not currently claimed
 

@@ -165,6 +165,11 @@ public class AuthResponseDto
 /// </summary>
 public class EventDto
 {
+    public string? EventId { get; set; }
+    public int? SchemaVersion { get; set; }
+    public DateTime? OccurredAt { get; set; }
+    public string? CausationId { get; set; }
+
     [Required(ErrorMessage = "UserId is required")]
     public string UserId { get; set; } = string.Empty;
 

@@ -1,9 +1,10 @@
 using FitLife.Core.DTOs;
 using FitLife.Core.Models;
+using FitLife.Core.Interfaces;
 using FitLife.Api.Auth;
-using FitLife.Infrastructure.Kafka;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Text.Json;
 
 namespace FitLife.Api.Controllers;
 
@@ -16,15 +17,15 @@ namespace FitLife.Api.Controllers;
 [Authorize]
 public class EventsController : ControllerBase
 {
-    private readonly KafkaProducer _kafkaProducer;
+    private readonly IEventPublisher _eventPublisher;
     private readonly ILogger<EventsController> _logger;
     private const string UserEventsTopic = "user-events";
 
     public EventsController(
-        KafkaProducer kafkaProducer,
+        IEventPublisher eventPublisher,
         ILogger<EventsController> logger)
     {
-        _kafkaProducer = kafkaProducer;
+        _eventPublisher = eventPublisher;
         _logger = logger;
     }
 
@@ -53,24 +54,6 @@ public class EventsController : ControllerBase
     {
         try
         {
-            // Validate EventType
-            if (!EventTypes.IsValid(eventDto.EventType))
-            {
-                _logger.LogWarning(
-                    "Invalid event type received: {EventType} from user {UserId}",
-                    eventDto.EventType, eventDto.UserId);
-
-                return BadRequest(new ApiResponse<object>
-                {
-                    Success = false,
-                    Message = "Invalid event type",
-                    Errors = new List<string>
-                    {
-                        $"EventType must be one of: {string.Join(", ", EventTypes.ValidTypes)}"
-                    }
-                });
-            }
-
             // Validate user from JWT token matches UserId in request
             // JwtRegisteredClaimNames.Sub becomes ClaimTypes.NameIdentifier in ASP.NET Core
             var tokenUserId = User.GetSubjectId();
@@ -91,23 +74,19 @@ public class EventsController : ControllerBase
                 return Forbid();
             }
 
-            // Create event object
-            var userEvent = new UserEvent
-            {
-                UserId = eventDto.UserId,
-                ItemId = eventDto.ItemId,
-                ItemType = eventDto.ItemType,
-                EventType = eventDto.EventType,
-                Timestamp = DateTime.UtcNow,
-                Metadata = eventDto.Metadata
-            };
+            var validationError = ValidateEvent(eventDto);
+            if (validationError != null)
+                return BadRequest(EventContractError(validationError));
 
-            // Publish to Kafka (fire-and-forget for performance)
-            // Partition key = UserId ensures events for same user are processed in order
-            await _kafkaProducer.ProduceAsync(
+            var userEvent = CreateUserEvent(eventDto);
+
+            // Wait for broker acknowledgement before accepting the event.
+            // Partition key = UserId preserves per-user ordering.
+            await _eventPublisher.PublishAsync(
                 topic: UserEventsTopic,
                 key: userEvent.UserId,
-                value: userEvent
+                userEvent: userEvent,
+                cancellationToken: HttpContext.RequestAborted
             );
 
             _logger.LogInformation(
@@ -120,8 +99,9 @@ public class EventsController : ControllerBase
                 Message = "Event tracked successfully",
                 Data = new
                 {
-                    eventId = Guid.NewGuid().ToString(),
-                    timestamp = userEvent.Timestamp
+                    eventId = userEvent.EventId,
+                    schemaVersion = userEvent.SchemaVersion,
+                    occurredAt = userEvent.OccurredAt
                 }
             });
         }
@@ -179,30 +159,38 @@ public class EventsController : ControllerBase
                 return Forbid();
             }
 
+            var validationErrors = events
+                .Select((eventDto, index) => new
+                {
+                    Index = index,
+                    Error = ValidateEvent(eventDto)
+                })
+                .Where(result => result.Error != null)
+                .Select(result => $"events[{result.Index}]: {result.Error}")
+                .ToList();
+            if (validationErrors.Count > 0)
+            {
+                return BadRequest(new ApiResponse<object>
+                {
+                    Success = false,
+                    Message = "Event batch validation failed",
+                    Errors = validationErrors
+                });
+            }
+
             var publishedCount = 0;
-            var errors = new List<string>();
+            var publishedEventIds = new List<string>();
 
             foreach (var eventDto in events)
             {
-                // Validate each event
-                if (!EventTypes.IsValid(eventDto.EventType))
-                {
-                    errors.Add($"Invalid event type: {eventDto.EventType}");
-                    continue;
-                }
-
-                var userEvent = new UserEvent
-                {
-                    UserId = eventDto.UserId,
-                    ItemId = eventDto.ItemId,
-                    ItemType = eventDto.ItemType,
-                    EventType = eventDto.EventType,
-                    Timestamp = DateTime.UtcNow,
-                    Metadata = eventDto.Metadata
-                };
-
-                await _kafkaProducer.ProduceAsync(UserEventsTopic, userEvent.UserId, userEvent);
+                var userEvent = CreateUserEvent(eventDto);
+                await _eventPublisher.PublishAsync(
+                    UserEventsTopic,
+                    userEvent.UserId,
+                    userEvent,
+                    HttpContext.RequestAborted);
                 publishedCount++;
+                publishedEventIds.Add(userEvent.EventId);
             }
 
             _logger.LogInformation(
@@ -217,7 +205,7 @@ public class EventsController : ControllerBase
                 {
                     published = publishedCount,
                     total = events.Count,
-                    errors = errors.Count > 0 ? errors : null
+                    eventIds = publishedEventIds
                 }
             });
         }
@@ -231,4 +219,61 @@ public class EventsController : ControllerBase
             });
         }
     }
+
+    private UserEvent CreateUserEvent(EventDto eventDto)
+    {
+        var occurredAt = eventDto.OccurredAt ?? DateTime.UtcNow;
+        return new UserEvent
+        {
+            EventId = eventDto.EventId ?? Guid.NewGuid().ToString(),
+            SchemaVersion = eventDto.SchemaVersion ?? 1,
+            OccurredAt = occurredAt,
+            CorrelationId =
+                HttpContext.Items["CorrelationId"]?.ToString() ?? string.Empty,
+            CausationId = eventDto.CausationId,
+            UserId = eventDto.UserId,
+            ItemId = eventDto.ItemId,
+            ItemType = eventDto.ItemType,
+            EventType = eventDto.EventType,
+            Timestamp = occurredAt,
+            Metadata = eventDto.Metadata
+        };
+    }
+
+    private static string? ValidateEvent(EventDto eventDto)
+    {
+        if (!EventTypes.IsValid(eventDto.EventType))
+            return $"EventType must be one of: {string.Join(", ", EventTypes.ValidTypes)}";
+        if (string.IsNullOrWhiteSpace(eventDto.ItemId)
+            || eventDto.ItemId.Length > 200)
+            return "ItemId is required and must be 200 characters or fewer";
+        if (string.IsNullOrWhiteSpace(eventDto.ItemType)
+            || eventDto.ItemType.Length > 50)
+            return "ItemType is required and must be 50 characters or fewer";
+        if (eventDto.EventId != null
+            && (!Guid.TryParse(eventDto.EventId, out _)
+                || eventDto.EventId.Length > 100))
+            return "EventId must be a valid GUID";
+        if (eventDto.SchemaVersion is not null and not 1)
+            return "SchemaVersion must be 1";
+
+        var occurredAt = eventDto.OccurredAt ?? DateTime.UtcNow;
+        if (occurredAt < DateTime.UtcNow.AddHours(-24)
+            || occurredAt > DateTime.UtcNow.AddMinutes(5))
+            return "OccurredAt must be within the last 24 hours and no more than 5 minutes in the future";
+
+        if (eventDto.Metadata != null
+            && JsonSerializer.SerializeToUtf8Bytes(eventDto.Metadata).Length
+            > 8 * 1024)
+            return "Metadata must be 8 KiB or smaller";
+
+        return null;
+    }
+
+    private static ApiResponse<object> EventContractError(string error) => new()
+    {
+        Success = false,
+        Message = "Event validation failed",
+        Errors = new List<string> { error }
+    };
 }

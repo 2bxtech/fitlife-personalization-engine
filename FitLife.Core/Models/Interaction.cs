@@ -7,6 +7,7 @@ namespace FitLife.Core.Models;
 public class Interaction
 {
     public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string? EventId { get; set; }
     
     public string UserId { get; set; } = string.Empty;
     

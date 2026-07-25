@@ -29,6 +29,12 @@ public static class EventTypes
 /// </summary>
 public class UserEvent
 {
+    public string EventId { get; set; } = Guid.NewGuid().ToString();
+    public int SchemaVersion { get; set; } = 1;
+    public DateTime OccurredAt { get; set; } = DateTime.UtcNow;
+    public string CorrelationId { get; set; } = string.Empty;
+    public string? CausationId { get; set; }
+
     /// <summary>
     /// User who performed the action
     /// </summary>

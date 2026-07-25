@@ -8,6 +8,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using FitLife.Core.Models;
 
 namespace FitLife.Tests;
 
@@ -51,11 +52,43 @@ public class FitLifeWebApplicationFactory : WebApplicationFactory<Program>
 
             services.RemoveAll<IRedisHealthProbe>();
             services.AddSingleton<IRedisHealthProbe, HealthyRedisHealthProbe>();
+            services.RemoveAll<IEventPublisher>();
+            services.AddSingleton<RecordingEventPublisher>();
+            services.AddSingleton<IEventPublisher>(serviceProvider =>
+                serviceProvider.GetRequiredService<RecordingEventPublisher>());
         });
     }
 
     private sealed class HealthyRedisHealthProbe : IRedisHealthProbe
     {
         public Task<TimeSpan> PingAsync() => Task.FromResult(TimeSpan.Zero);
+    }
+}
+
+public sealed class RecordingEventPublisher : IEventPublisher
+{
+    public List<UserEvent> PublishedEvents { get; } = new();
+    public bool FailNextPublish { get; set; }
+
+    public Task PublishAsync(
+        string topic,
+        string key,
+        UserEvent userEvent,
+        CancellationToken cancellationToken = default)
+    {
+        if (FailNextPublish)
+        {
+            FailNextPublish = false;
+            throw new InvalidOperationException("Forced publisher failure");
+        }
+
+        PublishedEvents.Add(userEvent);
+        return Task.CompletedTask;
+    }
+
+    public void Reset()
+    {
+        PublishedEvents.Clear();
+        FailNextPublish = false;
     }
 }

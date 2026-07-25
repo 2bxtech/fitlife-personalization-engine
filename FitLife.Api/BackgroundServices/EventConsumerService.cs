@@ -1,6 +1,8 @@
 using Confluent.Kafka;
 using FitLife.Core.Interfaces;
 using FitLife.Core.Models;
+using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -119,7 +121,7 @@ public class EventConsumerService : BackgroundService
     /// <summary>
     /// Processes a single Kafka event message and stores it in the database
     /// </summary>
-    private async Task ProcessEventAsync(Message<string, string> message, CancellationToken cancellationToken)
+    internal async Task ProcessEventAsync(Message<string, string> message, CancellationToken cancellationToken)
     {
         try
         {
@@ -127,7 +129,9 @@ public class EventConsumerService : BackgroundService
             var userEvent = JsonSerializer.Deserialize<UserEvent>(message.Value);
             if (userEvent == null)
             {
-                _logger.LogWarning("Failed to deserialize event message: {Message}", message.Value);
+                _logger.LogWarning(
+                    "Failed to deserialize event for key {MessageKey}",
+                    message.Key);
                 return;
             }
 
@@ -146,7 +150,7 @@ public class EventConsumerService : BackgroundService
                 ItemId = userEvent.ItemId,
                 ItemType = userEvent.ItemType,
                 EventType = userEvent.EventType,
-                Timestamp = userEvent.Timestamp,
+                Timestamp = userEvent.OccurredAt,
                 Metadata = metadataJson
             };
 
@@ -154,8 +158,34 @@ public class EventConsumerService : BackgroundService
             using (var scope = _serviceProvider.CreateScope())
             {
                 var interactionRepository = scope.ServiceProvider.GetRequiredService<IInteractionRepository>();
+                if (await interactionRepository.ExistsByEventIdAsync(
+                        userEvent.EventId))
+                {
+                    _logger.LogInformation(
+                        "Ignoring duplicate event {EventId}",
+                        userEvent.EventId);
+                    return;
+                }
+
+                interaction.EventId = userEvent.EventId;
                 await interactionRepository.AddAsync(interaction);
-                await interactionRepository.SaveChangesAsync();
+
+                try
+                {
+                    await interactionRepository.SaveChangesAsync();
+                }
+                catch (DbUpdateException ex) when (IsDuplicateEventId(ex))
+                {
+                    // Lost the race against another delivery of the same event
+                    // (redelivery after a crash/rebalance, or a concurrent
+                    // consumer). The unique EventId index is the source of
+                    // truth here, not the existence check above, so this is
+                    // an expected duplicate, not a failure to retry.
+                    _logger.LogInformation(
+                        "Ignoring duplicate event {EventId} (unique constraint)",
+                        userEvent.EventId);
+                    return;
+                }
 
                 _logger.LogInformation(
                     "Stored interaction: {InteractionId} - User={UserId}, Event={EventType}",
@@ -178,14 +208,24 @@ public class EventConsumerService : BackgroundService
         }
         catch (JsonException ex)
         {
-            _logger.LogError(ex, "Failed to deserialize event JSON: {Message}", message.Value);
+            _logger.LogError(
+                ex,
+                "Failed to deserialize event JSON for key {MessageKey}",
+                message.Key);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing event: {Message}", message.Value);
+            _logger.LogError(
+                ex,
+                "Error processing event for key {MessageKey}",
+                message.Key);
             throw; // Re-throw to prevent commit (will be retried)
         }
     }
+
+    private static bool IsDuplicateEventId(DbUpdateException ex) =>
+        ex.InnerException is SqlException sqlException
+        && (sqlException.Number == 2601 || sqlException.Number == 2627);
 
     public override void Dispose()
     {

@@ -2,13 +2,15 @@ using Confluent.Kafka;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
+using FitLife.Core.Interfaces;
+using FitLife.Core.Models;
 
 namespace FitLife.Infrastructure.Kafka;
 
 /// <summary>
 /// Kafka producer service for publishing user events to the event stream
 /// </summary>
-public class KafkaProducer : IDisposable
+public class KafkaProducer : IEventPublisher, IDisposable
 {
     private readonly IProducer<string, string> _producer;
     private readonly ILogger<KafkaProducer> _logger;
@@ -59,12 +61,16 @@ public class KafkaProducer : IDisposable
     /// </summary>
     /// <param name="topic">Topic name (e.g., "user-events")</param>
     /// <param name="key">Partition key - use UserId for ordered processing per user</param>
-    /// <param name="value">Event payload as object (will be JSON serialized)</param>
-    public async Task ProduceAsync(string topic, string key, object value)
+    /// <param name="userEvent">Versioned event envelope to serialize.</param>
+    public async Task PublishAsync(
+        string topic,
+        string key,
+        UserEvent userEvent,
+        CancellationToken cancellationToken = default)
     {
         try
         {
-            var json = JsonSerializer.Serialize(value);
+            var json = JsonSerializer.Serialize(userEvent);
             var message = new Message<string, string>
             {
                 Key = key,
@@ -72,26 +78,15 @@ public class KafkaProducer : IDisposable
                 Timestamp = new Timestamp(DateTime.UtcNow)
             };
 
-            // Fire-and-forget: Don't await in API context to avoid blocking
-            _ = _producer.ProduceAsync(topic, message, CancellationToken.None)
-                .ContinueWith(task =>
-                {
-                    if (task.IsFaulted)
-                    {
-                        _logger.LogError(task.Exception, 
-                            "Failed to publish message to topic {Topic} with key {Key}", 
-                            topic, key);
-                    }
-                    else
-                    {
-                        var result = task.Result;
-                        _logger.LogDebug(
-                            "Message published to {Topic} [partition {Partition}, offset {Offset}]",
-                            result.Topic, result.Partition.Value, result.Offset.Value);
-                    }
-                });
-
-            _logger.LogInformation("Event queued for publishing to topic {Topic} with key {Key}", topic, key);
+            var result = await _producer.ProduceAsync(
+                topic,
+                message,
+                cancellationToken);
+            _logger.LogDebug(
+                "Message published to {Topic} [partition {Partition}, offset {Offset}]",
+                result.Topic,
+                result.Partition.Value,
+                result.Offset.Value);
         }
         catch (Exception ex)
         {

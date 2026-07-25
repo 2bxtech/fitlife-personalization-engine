@@ -21,4 +21,6 @@ public interface IInteractionRepository : IRepository<Interaction>
     /// Gets interactions of a specific type for a user
     /// </summary>
     Task<List<Interaction>> GetByUserAndTypeAsync(string userId, string eventType, int days = 30);
+
+    Task<bool> ExistsByEventIdAsync(string eventId);
 }
