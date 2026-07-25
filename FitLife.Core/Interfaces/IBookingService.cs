@@ -9,4 +9,9 @@ public interface IBookingService
         string classId,
         string? idempotencyKey = null,
         CancellationToken cancellationToken = default);
+
+    Task<BookingResult> CancelAsync(
+        string userId,
+        string classId,
+        CancellationToken cancellationToken = default);
 }

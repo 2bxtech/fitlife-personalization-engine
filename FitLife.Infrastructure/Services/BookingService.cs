@@ -110,6 +110,85 @@ public sealed class BookingService : IBookingService
         return new BookingResult(BookingOutcome.Conflict);
     }
 
+    public async Task<BookingResult> CancelAsync(
+        string userId,
+        string classId,
+        CancellationToken cancellationToken = default)
+    {
+        for (var attempt = 1; attempt <= MaxConcurrencyAttempts; attempt++)
+        {
+            var booking = await _context.Bookings
+                .Include(entity => entity.Class)
+                .SingleOrDefaultAsync(
+                    entity => entity.UserId == userId
+                        && entity.ClassId == classId
+                        && entity.Status == BookingStatuses.Active,
+                    cancellationToken);
+
+            if (booking == null)
+            {
+                var cancelledBooking = await _context.Bookings
+                    .AsNoTracking()
+                    .Include(entity => entity.Class)
+                    .Where(entity => entity.UserId == userId
+                        && entity.ClassId == classId
+                        && entity.Status == BookingStatuses.Cancelled)
+                    .OrderByDescending(entity => entity.CancelledAt)
+                    .FirstOrDefaultAsync(cancellationToken);
+
+                return cancelledBooking == null
+                    ? new BookingResult(BookingOutcome.BookingNotFound)
+                    : new BookingResult(
+                        BookingOutcome.AlreadyCancelled,
+                        cancelledBooking.Class,
+                        cancelledBooking);
+            }
+
+            var now = DateTime.UtcNow;
+            booking.Status = BookingStatuses.Cancelled;
+            booking.CancelledAt = now;
+            booking.UpdatedAt = now;
+            booking.Class.CurrentEnrollment--;
+            booking.Class.UpdatedAt = now;
+            _context.Interactions.Add(new Interaction
+            {
+                UserId = userId,
+                ItemId = classId,
+                ItemType = "Class",
+                EventType = "Cancel",
+                Timestamp = now,
+                Metadata = JsonSerializer.Serialize(new
+                {
+                    source = "web",
+                    className = booking.Class.Name,
+                    bookingId = booking.Id
+                })
+            });
+
+            try
+            {
+                await SaveAtomicallyAsync(cancellationToken);
+                await _cacheService.DeleteAsync($"rec:{userId}");
+
+                _logger.LogInformation(
+                    "User {UserId} cancelled booking {BookingId} for class {ClassId}",
+                    userId, booking.Id, classId);
+                return new BookingResult(
+                    BookingOutcome.Cancelled,
+                    booking.Class,
+                    booking);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                _context.ChangeTracker.Clear();
+                if (attempt == MaxConcurrencyAttempts)
+                    return new BookingResult(BookingOutcome.Conflict);
+            }
+        }
+
+        return new BookingResult(BookingOutcome.Conflict);
+    }
+
     private async Task<BookingResult?> FindExistingResultAsync(
         string userId,
         string classId,

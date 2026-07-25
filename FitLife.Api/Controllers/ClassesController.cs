@@ -208,6 +208,56 @@ public class ClassesController : ControllerBase
     }
 
     /// <summary>
+    /// Cancel the authenticated user's active booking for a class.
+    /// </summary>
+    [HttpPost("{id}/cancel")]
+    [Authorize]
+    public async Task<ActionResult<ApiResponse<ClassDto>>> CancelBooking(string id)
+    {
+        try
+        {
+            var userId = User.GetSubjectId();
+            if (userId == null)
+                return Unauthorized(new ApiResponse<ClassDto> { Success = false, Message = "User not authenticated" });
+
+            var result = await _bookingService.CancelAsync(
+                userId,
+                id,
+                HttpContext.RequestAborted);
+
+            if (result.Outcome == BookingOutcome.BookingNotFound)
+                return NotFound(new ApiResponse<ClassDto> { Success = false, Message = "Active booking not found" });
+
+            if (result.Outcome == BookingOutcome.Conflict)
+            {
+                return Conflict(new ApiResponse<ClassDto>
+                {
+                    Success = false,
+                    Message = "Cancellation conflicted with another request; refresh and retry"
+                });
+            }
+
+            return Ok(new ApiResponse<ClassDto>
+            {
+                Success = true,
+                Data = DtoMappers.MapToClassDto(result.Class!),
+                Message = result.Outcome == BookingOutcome.AlreadyCancelled
+                    ? "Booking was already cancelled"
+                    : "Booking cancelled successfully"
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error cancelling booking for class {ClassId}", id);
+            return StatusCode(500, new ApiResponse<ClassDto>
+            {
+                Success = false,
+                Message = "Failed to cancel booking"
+            });
+        }
+    }
+
+    /// <summary>
     /// Create a new class (requires authentication)
     /// </summary>
     [HttpPost]

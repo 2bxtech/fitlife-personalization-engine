@@ -280,10 +280,22 @@ User clicks "Book Now" button
         → Create one "Book" interaction
     → After commit, invalidate the user's recommendation cache
     → Return booked, already-booked, full, or conflict result
+
+User cancels the booking
+    → POST /api/classes/{classId}/cancel
+    → Find only that user's active booking
+    → In one database transaction:
+        → Mark the booking cancelled
+        → Decrement class.CurrentEnrollment once
+        → Create one "Cancel" interaction
+    → After commit, invalidate the user's recommendation cache
+    → Return cancelled, already-cancelled, not-found, or conflict result
 ```
 
 Clients may send an `Idempotency-Key` header (up to 100 characters). Active
 user/class uniqueness and idempotency-key uniqueness are database-enforced.
+Cancellation is scoped to the authenticated user, and repeated cancellation is
+safe: it does not restore a second seat or create another interaction.
 Kafka event publishing remains available through the separate `/api/events`
 tracking flow; booking does not publish a second event.
 
