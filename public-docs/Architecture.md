@@ -296,6 +296,12 @@ Clients may send an `Idempotency-Key` header (up to 100 characters). Active
 user/class uniqueness and idempotency-key uniqueness are database-enforced.
 Cancellation is scoped to the authenticated user, and repeated cancellation is
 safe: it does not restore a second seat or create another interaction.
+Authenticated class and recommendation responses include only the requesting
+member's booking state. The UI uses that state to show `Book Now`, `Class Full`,
+or `Cancel Booking`, updates the affected class immediately, and refreshes
+recommendations after committed booking changes. A member's own full upcoming
+booked classes remain visible so an existing booking never loses its
+cancellation path; full unbooked classes are excluded from recommendations.
 Kafka event publishing remains available through the separate `/api/events`
 tracking flow; booking does not publish a second event.
 

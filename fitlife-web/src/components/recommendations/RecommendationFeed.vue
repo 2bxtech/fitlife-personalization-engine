@@ -2,13 +2,16 @@
 import { onMounted } from 'vue'
 import { useRecommendationStore } from '@/stores/recommendations'
 import { useAuthStore } from '@/stores/auth'
+import { useClassStore } from '@/stores/classes'
 import ClassCard from '@/components/classes/ClassCard.vue'
 
 const recommendationStore = useRecommendationStore()
 const authStore = useAuthStore()
+const classStore = useClassStore()
 
 const emit = defineEmits<{
   book: [classId: string]
+  cancel: [classId: string]
 }>()
 
 onMounted(async () => {
@@ -25,6 +28,10 @@ async function handleRefresh() {
 
 function handleBook(classId: string) {
   emit('book', classId)
+}
+
+function handleCancel(classId: string) {
+  emit('cancel', classId)
 }
 </script>
 
@@ -61,7 +68,9 @@ function handleBook(classId: string) {
         :class-data="rec.class"
         :show-recommendation-reason="true"
         :recommendation-reason="rec.reason"
+        :action-pending="classStore.actionClassId === rec.class.id"
         @book="handleBook"
+        @cancel="handleCancel"
       />
     </div>
   </div>

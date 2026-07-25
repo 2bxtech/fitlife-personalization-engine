@@ -3,11 +3,13 @@ import { onMounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useClassStore } from '@/stores/classes'
 import { useToast } from '@/composables/useToast'
+import { useRecommendationStore } from '@/stores/recommendations'
 import RecommendationFeed from '@/components/recommendations/RecommendationFeed.vue'
 
 const authStore = useAuthStore()
 const classStore = useClassStore()
 const toast = useToast()
+const recommendationStore = useRecommendationStore()
 
 onMounted(async () => {
   // Recommendations are fetched by RecommendationFeed component
@@ -15,10 +17,29 @@ onMounted(async () => {
 
 async function handleBook(classId: string) {
   try {
-    await classStore.bookClass(classId)
-    toast.success('Class booked successfully!')
+    const message = await classStore.bookClass(classId)
+    await refreshRecommendations()
+    toast.success(message)
   } catch (error: any) {
     toast.error(error.message || 'Failed to book class')
+  }
+}
+
+async function handleCancel(classId: string) {
+  try {
+    const message = await classStore.cancelBooking(classId)
+    await refreshRecommendations()
+    toast.success(message)
+  } catch (error: unknown) {
+    toast.error(
+      error instanceof Error ? error.message : 'Failed to cancel booking'
+    )
+  }
+}
+
+async function refreshRecommendations() {
+  if (authStore.user) {
+    await recommendationStore.fetchRecommendations(authStore.user.id, 10)
   }
 }
 </script>
@@ -57,7 +78,10 @@ async function handleBook(classId: string) {
       </div>
 
       <!-- Recommendations -->
-      <RecommendationFeed @book="handleBook" />
+      <RecommendationFeed
+        @book="handleBook"
+        @cancel="handleCancel"
+      />
     </div>
   </div>
 </template>

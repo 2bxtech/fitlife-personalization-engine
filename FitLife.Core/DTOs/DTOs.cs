@@ -42,6 +42,7 @@ public class ClassDto
     public int TotalRatings { get; set; }
     public int WeeklyBookings { get; set; }
     public bool IsActive { get; set; }
+    public bool IsBookedByCurrentUser { get; set; }
 }
 
 /// <summary>

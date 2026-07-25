@@ -51,14 +51,40 @@ public class ClassesController : ControllerBase
                 classes = await _classRepository.GetUpcomingClassesAsync(limit);
             }
 
+            var callerActiveClassIds = await GetAllActiveClassIdsAsync();
+            if (callerActiveClassIds.Count > 0)
+            {
+                var bookedClasses = await _classRepository.GetByIdsAsync(
+                    callerActiveClassIds);
+                classes = classes
+                    .Concat(bookedClasses.Where(classEntity =>
+                        classEntity.IsActive
+                        && classEntity.StartTime > DateTime.UtcNow))
+                    .DistinctBy(classEntity => classEntity.Id);
+            }
+
             // Apply additional filters
+            if (!string.IsNullOrEmpty(type))
+                classes = classes.Where(c =>
+                    c.Type.Equals(type, StringComparison.OrdinalIgnoreCase));
+
             if (!string.IsNullOrEmpty(level))
                 classes = classes.Where(c => c.Level.Equals(level, StringComparison.OrdinalIgnoreCase));
 
             if (startDate.HasValue)
                 classes = classes.Where(c => c.StartTime.Date >= startDate.Value.Date);
 
-            var classDtos = classes.Take(limit).Select(DtoMappers.MapToClassDto);
+            var returnedClasses = classes
+                .OrderByDescending(classEntity =>
+                    callerActiveClassIds.Contains(classEntity.Id))
+                .ThenBy(classEntity => classEntity.StartTime)
+                .Take(limit)
+                .ToList();
+            var activeClassIds = await GetActiveClassIdsAsync(returnedClasses);
+            var classDtos = returnedClasses.Select(classEntity =>
+                DtoMappers.MapToClassDto(
+                    classEntity,
+                    activeClassIds.Contains(classEntity.Id)));
 
             return Ok(new ApiResponse<IEnumerable<ClassDto>>
             {
@@ -100,7 +126,10 @@ public class ClassesController : ControllerBase
             return Ok(new ApiResponse<ClassDto>
             {
                 Success = true,
-                Data = DtoMappers.MapToClassDto(classEntity)
+                Data = DtoMappers.MapToClassDto(
+                    classEntity,
+                    (await GetActiveClassIdsAsync(new[] { classEntity }))
+                    .Contains(classEntity.Id))
             });
         }
         catch (Exception ex)
@@ -125,7 +154,12 @@ public class ClassesController : ControllerBase
         try
         {
             var classes = await _classRepository.GetPopularClassesAsync(limit);
-            var classDtos = classes.Select(DtoMappers.MapToClassDto);
+            var returnedClasses = classes.ToList();
+            var activeClassIds = await GetActiveClassIdsAsync(returnedClasses);
+            var classDtos = returnedClasses.Select(classEntity =>
+                DtoMappers.MapToClassDto(
+                    classEntity,
+                    activeClassIds.Contains(classEntity.Id)));
 
             return Ok(new ApiResponse<IEnumerable<ClassDto>>
             {
@@ -190,7 +224,9 @@ public class ClassesController : ControllerBase
             return Ok(new ApiResponse<ClassDto>
             {
                 Success = true,
-                Data = DtoMappers.MapToClassDto(result.Class!),
+                Data = DtoMappers.MapToClassDto(
+                    result.Class!,
+                    isBookedByCurrentUser: true),
                 Message = result.Outcome == BookingOutcome.AlreadyBooked
                     ? "Class was already booked"
                     : "Class booked successfully"
@@ -240,7 +276,9 @@ public class ClassesController : ControllerBase
             return Ok(new ApiResponse<ClassDto>
             {
                 Success = true,
-                Data = DtoMappers.MapToClassDto(result.Class!),
+                Data = DtoMappers.MapToClassDto(
+                    result.Class!,
+                    isBookedByCurrentUser: false),
                 Message = result.Outcome == BookingOutcome.AlreadyCancelled
                     ? "Booking was already cancelled"
                     : "Booking cancelled successfully"
@@ -405,5 +443,29 @@ public class ClassesController : ControllerBase
                 Message = "Failed to delete class"
             });
         }
+    }
+
+    private async Task<HashSet<string>> GetActiveClassIdsAsync(
+        IReadOnlyCollection<Class> classes)
+    {
+        var userId = User.GetSubjectId();
+        if (userId == null || classes.Count == 0)
+            return new HashSet<string>();
+
+        return await _bookingService.GetActiveClassIdsAsync(
+            userId,
+            classes.Select(classEntity => classEntity.Id),
+            HttpContext.RequestAborted);
+    }
+
+    private async Task<HashSet<string>> GetAllActiveClassIdsAsync()
+    {
+        var userId = User.GetSubjectId();
+        if (userId == null)
+            return new HashSet<string>();
+
+        return await _bookingService.GetActiveClassIdsAsync(
+            userId,
+            HttpContext.RequestAborted);
     }
 }

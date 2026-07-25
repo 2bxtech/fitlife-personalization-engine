@@ -8,7 +8,7 @@ namespace FitLife.Core.Interfaces;
 public interface IClassRepository : IRepository<Class>
 {
     /// <summary>
-    /// Get upcoming classes (active, with available spots, starting after now)
+    /// Get upcoming active classes with available capacity.
     /// </summary>
     Task<IEnumerable<Class>> GetUpcomingClassesAsync(int limit = 50);
     

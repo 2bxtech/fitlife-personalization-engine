@@ -320,6 +320,7 @@ public class ClassesControllerTests : IClassFixture<FitLifeWebApplicationFactory
         var body = await response.Content.ReadFromJsonAsync<ApiResponse<ClassDto>>(JsonOptions);
         body!.Success.Should().BeTrue();
         body.Data!.CurrentEnrollment.Should().Be(6); // Was 5, now 6
+        body.Data.IsBookedByCurrentUser.Should().BeTrue();
     }
 
     [Fact]
@@ -444,6 +445,7 @@ public class ClassesControllerTests : IClassFixture<FitLifeWebApplicationFactory
             await retry.Content.ReadFromJsonAsync<ApiResponse<ClassDto>>(JsonOptions);
         retryBody!.Message.Should().Be("Booking was already cancelled");
         retryBody.Data!.CurrentEnrollment.Should().Be(5);
+        retryBody.Data.IsBookedByCurrentUser.Should().BeFalse();
 
         using var scope = _factory.Services.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<FitLifeDbContext>();
@@ -492,6 +494,58 @@ public class ClassesControllerTests : IClassFixture<FitLifeWebApplicationFactory
         var response =
             await client.PostAsync("/api/classes/some-id/cancel", null);
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task GetClasses_Authenticated_ReturnsOnlyCallersBookingState()
+    {
+        var classId = $"read_model_{Guid.NewGuid():N}";
+        await SeedClassAsync(classId, capacity: 30, enrollment: 5);
+        var owner = await GetAuthSessionAsync();
+        using (var ownerClient = _factory.CreateClient())
+        {
+            ownerClient.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", owner.Token);
+            (await ownerClient.PostAsync($"/api/classes/{classId}/book", null))
+                .StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var ownerResponse = await ownerClient.GetAsync(
+                $"/api/classes?limit=50");
+            var ownerBody = await ownerResponse.Content
+                .ReadFromJsonAsync<ApiResponse<List<ClassDto>>>(JsonOptions);
+            ownerBody!.Data!.Single(classDto => classDto.Id == classId)
+                .IsBookedByCurrentUser.Should().BeTrue();
+        }
+
+        using var otherClient = _factory.CreateClient();
+        var otherToken = await GetAuthTokenAsync();
+        otherClient.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", otherToken);
+        var otherResponse = await otherClient.GetAsync("/api/classes?limit=50");
+        var otherBody = await otherResponse.Content
+            .ReadFromJsonAsync<ApiResponse<List<ClassDto>>>(JsonOptions);
+        otherBody!.Data!.Single(classDto => classDto.Id == classId)
+            .IsBookedByCurrentUser.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetClasses_FullBookedClass_RemainsVisibleForCancellation()
+    {
+        var classId = $"full_read_model_{Guid.NewGuid():N}";
+        await SeedClassAsync(classId, capacity: 1, enrollment: 0);
+        var token = await GetAuthTokenAsync();
+        _client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", token);
+        (await _client.PostAsync($"/api/classes/{classId}/book", null))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var response = await _client.GetAsync("/api/classes?limit=50");
+        var body = await response.Content
+            .ReadFromJsonAsync<ApiResponse<List<ClassDto>>>(JsonOptions);
+        var classDto = body!.Data!.Single(item => item.Id == classId);
+
+        classDto.AvailableSpots.Should().Be(0);
+        classDto.IsBookedByCurrentUser.Should().BeTrue();
     }
 
     [Fact]
@@ -782,6 +836,49 @@ public class RecommendationsControllerTests : IClassFixture<FitLifeWebApplicatio
 
         var response = await _client.PostAsync($"/api/recommendations/{user.Id}/refresh", null);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task RefreshRecommendations_ExcludesFullUnbookedClasses()
+    {
+        var (token, user) = await RegisterAndGetAuthAsync();
+        _client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", token);
+        var fullClassId = $"full_rec_{Guid.NewGuid():N}";
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var context =
+                scope.ServiceProvider.GetRequiredService<FitLifeDbContext>();
+            context.Classes.Add(new Class
+            {
+                Id = fullClassId,
+                Name = "Full recommendation trap",
+                Type = "Yoga",
+                Level = "Intermediate",
+                InstructorId = "full-instructor",
+                InstructorName = "Full Instructor",
+                Description = "Must not enter recommendation candidates",
+                StartTime = DateTime.UtcNow.AddDays(1),
+                DurationMinutes = 60,
+                Capacity = 1,
+                CurrentEnrollment = 1,
+                AverageRating = 5m,
+                WeeklyBookings = 100,
+                IsActive = true
+            });
+            await context.SaveChangesAsync();
+        }
+
+        var response = await _client.PostAsync(
+            $"/api/recommendations/{user.Id}/refresh",
+            null);
+        var body = await response.Content
+            .ReadFromJsonAsync<ApiResponse<List<RecommendationDto>>>(JsonOptions);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        body!.Data.Should().NotContain(recommendation =>
+            recommendation.Class.Id == fullClassId);
     }
 
     [Fact]

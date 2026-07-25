@@ -31,7 +31,9 @@ public static class DtoMappers
     /// <summary>
     /// Maps a Class entity to ClassDto
     /// </summary>
-    public static ClassDto MapToClassDto(Class classEntity)
+    public static ClassDto MapToClassDto(
+        Class classEntity,
+        bool isBookedByCurrentUser = false)
     {
         return new ClassDto
         {
@@ -49,7 +51,8 @@ public static class DtoMappers
             AverageRating = classEntity.AverageRating,
             TotalRatings = classEntity.TotalRatings,
             WeeklyBookings = classEntity.WeeklyBookings,
-            IsActive = classEntity.IsActive
+            IsActive = classEntity.IsActive,
+            IsBookedByCurrentUser = isBookedByCurrentUser
         };
     }
 }

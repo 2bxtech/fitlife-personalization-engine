@@ -33,6 +33,7 @@ const mockRec = {
     totalRatings: 42,
     weeklyBookings: 25,
     isActive: true,
+    isBookedByCurrentUser: false,
   },
 }
 

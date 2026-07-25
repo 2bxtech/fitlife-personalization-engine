@@ -18,6 +18,7 @@ public class RecommendationService : IRecommendationService
     private readonly IRecommendationRepository _recommendationRepository;
     private readonly ICacheService _cacheService;
     private readonly IScoringEngine _scoringEngine;
+    private readonly IBookingService _bookingService;
     private readonly ILogger<RecommendationService> _logger;
 
     public RecommendationService(
@@ -27,6 +28,7 @@ public class RecommendationService : IRecommendationService
         IRecommendationRepository recommendationRepository,
         ICacheService cacheService,
         IScoringEngine scoringEngine,
+        IBookingService bookingService,
         ILogger<RecommendationService> logger)
     {
         _userRepository = userRepository;
@@ -35,6 +37,7 @@ public class RecommendationService : IRecommendationService
         _recommendationRepository = recommendationRepository;
         _cacheService = cacheService;
         _scoringEngine = scoringEngine;
+        _bookingService = bookingService;
         _logger = logger;
     }
 
@@ -65,7 +68,7 @@ public class RecommendationService : IRecommendationService
             _logger.LogInformation("Found {Count} recent recommendations in database for user {UserId}", 
                 recentRecs.Count, userId);
 
-            var recentDtos = await ConvertToDtos(recentRecs);
+            var recentDtos = await ConvertToDtos(userId, recentRecs);
             
             // Cache for next request
             await _cacheService.SetAsync(cacheKey, recentDtos, TimeSpan.FromMinutes(10));
@@ -151,6 +154,10 @@ public class RecommendationService : IRecommendationService
 
             // Generate recommendation DTOs with explanations
             var recommendations = new List<RecommendationDto>();
+            var activeClassIds = await _bookingService.GetActiveClassIdsAsync(
+                userId,
+                topRecommendations.Select(recommendation =>
+                    recommendation.Class.Id));
             for (int i = 0; i < topRecommendations.Count; i++)
             {
                 var (classItem, score) = topRecommendations[i];
@@ -161,7 +168,9 @@ public class RecommendationService : IRecommendationService
                     Rank = i + 1,
                     Score = Math.Round(score, 2),
                     Reason = reason,
-                    Class = DtoMappers.MapToClassDto(classItem),
+                    Class = DtoMappers.MapToClassDto(
+                        classItem,
+                        activeClassIds.Contains(classItem.Id)),
                     GeneratedAt = DateTime.UtcNow
                 });
             }
@@ -185,7 +194,7 @@ public class RecommendationService : IRecommendationService
             _logger.LogError(ex, "Error generating recommendations for user {UserId}", userId);
             
             // Fallback: Return popular classes
-            return await GetPopularClassesFallback(limit);
+            return await GetPopularClassesFallback(userId, limit);
         }
     }
 
@@ -279,11 +288,16 @@ public class RecommendationService : IRecommendationService
     /// Converts database recommendation entities to DTOs with class details
     /// Uses batch loading to avoid N+1 queries
     /// </summary>
-    private async Task<List<RecommendationDto>> ConvertToDtos(List<Recommendation> recommendations)
+    private async Task<List<RecommendationDto>> ConvertToDtos(
+        string userId,
+        List<Recommendation> recommendations)
     {
         var classIds = recommendations.Select(r => r.ItemId).Distinct().ToList();
         var classes = await _classRepository.GetByIdsAsync(classIds);
         var classLookup = classes.ToDictionary(c => c.Id);
+        var activeClassIds = await _bookingService.GetActiveClassIdsAsync(
+            userId,
+            classIds);
 
         var dtos = new List<RecommendationDto>();
 
@@ -296,7 +310,9 @@ public class RecommendationService : IRecommendationService
                     Rank = rec.Rank,
                     Score = (double)rec.Score,
                     Reason = rec.Reason,
-                    Class = DtoMappers.MapToClassDto(classItem),
+                    Class = DtoMappers.MapToClassDto(
+                        classItem,
+                        activeClassIds.Contains(classItem.Id)),
                     GeneratedAt = rec.GeneratedAt
                 });
             }
@@ -309,18 +325,25 @@ public class RecommendationService : IRecommendationService
     /// Fallback when recommendation generation fails
     /// Returns popular classes instead
     /// </summary>
-    private async Task<List<RecommendationDto>> GetPopularClassesFallback(int limit)
+    private async Task<List<RecommendationDto>> GetPopularClassesFallback(
+        string userId,
+        int limit)
     {
         _logger.LogWarning("Using popular classes fallback for recommendations");
 
         var popularClasses = (await _classRepository.GetPopularClassesAsync(limit)).ToList();
+        var activeClassIds = await _bookingService.GetActiveClassIdsAsync(
+            userId,
+            popularClasses.Select(classEntity => classEntity.Id));
         
         return popularClasses.Select((c, index) => new RecommendationDto
         {
             Rank = index + 1,
             Score = 50.0, // Default score for fallback
             Reason = "Popular class this week",
-            Class = DtoMappers.MapToClassDto(c),
+            Class = DtoMappers.MapToClassDto(
+                c,
+                activeClassIds.Contains(c.Id)),
             GeneratedAt = DateTime.UtcNow
         }).ToList();
     }

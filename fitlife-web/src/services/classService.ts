@@ -7,6 +7,11 @@ interface ApiResponse<T> {
   message?: string
 }
 
+export interface ClassActionResult {
+  classData: Class
+  message: string
+}
+
 export const classService = {
   async getClasses(filters?: ClassFilter): Promise<Class[]> {
     const params: Record<string, string | number | undefined> = {}
@@ -24,8 +29,19 @@ export const classService = {
     return response.data.data
   },
 
-  async bookClass(classId: string): Promise<Class> {
+  async bookClass(classId: string): Promise<ClassActionResult> {
     const response = await api.post<ApiResponse<Class>>(`/classes/${classId}/book`)
-    return response.data.data
+    return {
+      classData: response.data.data,
+      message: response.data.message || 'Class booked successfully',
+    }
+  },
+
+  async cancelBooking(classId: string): Promise<ClassActionResult> {
+    const response = await api.post<ApiResponse<Class>>(`/classes/${classId}/cancel`)
+    return {
+      classData: response.data.data,
+      message: response.data.message || 'Booking cancelled successfully',
+    }
   },
 }

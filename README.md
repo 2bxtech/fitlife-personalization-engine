@@ -1,497 +1,275 @@
 # FitLife Personalization Engine
 
-Gym class recommendation system for Life Time Fitness using event-driven architecture and multi-factor scoring algorithms.
+An explainable, event-driven gym-class personalization case study built with
+.NET 8, Vue 3, SQL Server, Redis, and Kafka.
 
-## Why I Built This
+FitLife combines member preferences, fitness level, instructor affinity,
+schedule, class availability, ratings, recency, popularity, and behavior-derived
+segments to produce ranked recommendations with human-readable reasons. The
+current engine is intentionally deterministic: it demonstrates transparent
+decision-system design without presenting a trained model or an LLM as a
+requirement.
 
-In October 2025, a recruiter reached out about a Full Stack .NET Core contract opportunity with Life Time Fitness - joining their **Personalization/Pega rebuild team**. The role's tech stack (.NET Core, Vue.js, Azure, Kafka, Kubernetes) aligned well with my experience, so I built this project to:
+> **Project status:** active portfolio case study. The application and its local
+> Docker environment are implemented and tested. A public hosted environment has
+> not yet been verified. Kubernetes and disabled Azure deployment assets are
+> configuration evidence, not a claim of a live AKS deployment.
 
-1. **Demonstrate domain understanding** - Show I could design a personalization engine for gym class recommendations
-2. **Prove the tech stack fit** - .NET 8, Vue 3, Kafka, Redis, Kubernetes - exactly what the role required
-3. **Explore the problem space** - Event-driven user tracking, multi-factor scoring algorithms, caching strategies
+## What this project demonstrates
 
-This project demonstrates patterns I use professionally:
+- Full-stack delivery with ASP.NET Core, EF Core, Vue, TypeScript, Pinia, and
+  Tailwind CSS.
+- Explainable personalization through a nine-factor deterministic scorer.
+- Authorization boundaries for members and catalog operators.
+- Durable, transactional booking with database-enforced uniqueness and capacity
+  invariants.
+- Safe booking retries, optimistic concurrency, idempotency keys, and
+  exactly-once capacity restoration on cancellation.
+- Redis cache-aside behavior with post-commit invalidation.
+- Kafka-based interaction publishing and consumption.
+- Health checks, production configuration validation, rate limiting, and
+  correlation IDs.
+- Reproducible backend and frontend validation in GitHub Actions.
 
-- **Event-driven architecture** with Kafka - similar to logistics event tracking at C.H. Robinson
-- **Multi-factor scoring algorithms** - recommendation engines balancing weighted criteria (instructor preference, fitness level, time slots, user segments)
-- **Redis caching strategies** - cache-aside pattern with TTL and invalidation for high-read workloads
-- **Background workers** - IHostedService for batch processing and event consumption
-- **.NET 8 + Vue 3 full-stack** - complete application with JWT auth, Pinia state management, and Tailwind CSS
+## Product flow
 
-## Overview
+1. A member registers or signs in.
+2. The API ranks upcoming classes with available capacity using profile and
+   interaction data.
+3. Each recommendation includes a concise explanation such as preferred class
+   type, instructor affinity, schedule fit, or rating.
+4. The member books or cancels a class.
+5. Booking state, enrollment, and the corresponding interaction are committed
+   atomically.
+6. The UI updates the affected class and refreshes recommendations after the
+   commit.
 
-FitLife delivers personalized class recommendations based on user preferences, interaction history, and behavior patterns. The system processes user events asynchronously through Kafka, generates recommendations using a 9-factor scoring algorithm, and caches results in Redis for performance.
-
-## Tech Stack
-
-**Backend**
-- .NET 8.0 (ASP.NET Core Web API)
-- Entity Framework Core 9.0 (SQL Server)
-- Kafka (event streaming)
-- Redis (caching layer)
-
-**Frontend**
-- Vue.js 3.5 with TypeScript
-- Vite 7.1 (build tool)
-- Pinia 3.0 (state management)
-- Tailwind CSS 4.1 (styling)
-- Axios 1.13 (HTTP client)
-
-**Infrastructure**
-- Docker & Docker Compose
-- Kubernetes (Azure AKS)
-- GitHub Actions (CI/CD)
-- Nginx (web server)
+Booking state is scoped to the authenticated member. One member cannot inspect
+or cancel another member's booking through the class API. Classes with no
+remaining capacity are excluded from recommendations. A member's existing
+booking remains visible in the class catalog so it can still be cancelled.
 
 ## Architecture
 
+```mermaid
+flowchart LR
+    SPA[Vue 3 SPA] --> API[ASP.NET Core API]
+    API --> CORE[Domain services]
+    CORE --> SQL[(SQL Server)]
+    CORE --> REDIS[(Redis)]
+    API --> KAFKA[Kafka]
+    KAFKA --> CONSUMER[Event consumer]
+    CONSUMER --> SQL
+    WORKERS[Scheduled personalization workers] --> CORE
 ```
-Vue.js SPA → .NET API → Services → Repositories → Database
-              ↓
-         Kafka Events → Background Workers → Cache/Database
+
+The repository is organized as a modular monolith:
+
+```text
+FitLife.Api/              HTTP API, authorization, health checks, hosted workers
+FitLife.Core/             Domain models, DTOs, scoring and recommendation logic
+FitLife.Infrastructure/   EF Core, SQL Server, Redis, Kafka, repositories
+FitLife.Tests/            Unit, integration, migration and SQL invariant tests
+fitlife-web/              Vue 3 and TypeScript SPA
+k8s/                      Configured Kubernetes manifests; not verified live
+public-docs/              Public architecture and decision records
+scripts/verify.ps1        Reproducible repository validation
 ```
 
-**Core Components**:
-- **Frontend**: Vue 3 + TypeScript + Pinia (http://localhost:3000)
-- **Backend**: .NET 8 Web API with JWT auth (http://localhost:5269)
-- **Event Bus**: Kafka for async user interaction tracking
-- **Cache**: Redis for recommendation caching (10min TTL)
-- **Database**: SQL Server with EF Core migrations
-- **Workers**: 3 background services (IHostedService):
-  - `EventConsumerService` - Polls Kafka, saves interactions
-  - `RecommendationGeneratorService` - Batch generates recs every 10min
-  - `UserProfilerService` - Updates user segments every 30min
+### Important engineering decisions
 
----
+| Concern | Implemented approach |
+|---|---|
+| Personalization | Deterministic weighted scoring with readable reasons |
+| Booking uniqueness | SQL Server filtered unique index for active member/class bookings |
+| Capacity concurrency | Transactional updates plus SQL Server rowversion |
+| Retry safety | Stable duplicate result and optional `Idempotency-Key` |
+| Cancellation | Transactional status change, capacity restoration, and `Cancel` interaction |
+| Authorization | Caller ownership checks and a named operator policy for catalog mutations |
+| Recommendation cache | Redis cache-aside with invalidation only after committed changes |
+| Health | Dependency-free liveness and SQL/Redis-aware readiness |
 
-## Prerequisites
+See [Architecture](public-docs/Architecture.md) and
+[Design Decisions](public-docs/FitLife-Decisions.md) for the longer rationale.
 
-**Required**:
+## Recommendation model
+
+The scorer combines nine explicit factors:
+
+| Factor | Weight or range | Signal |
+|---|---:|---|
+| Favorite instructor | 20 | Completed-class instructor affinity |
+| Preferred class type | 15 | Member-selected preferences |
+| Segment alignment | 12 | Behavior-derived member segment |
+| Fitness-level match | 10 | Class/member difficulty alignment |
+| Time preference | 8 | Historical booking hours |
+| Popularity | Up to 8 | Recent class demand |
+| Recency | Up to 5 | Time until class starts |
+| Availability | -5 to +3 | Remaining-capacity pressure |
+| Class rating | Rating x 2 | Aggregate member rating |
+
+These weights are product rules, not learned parameters. Performance values
+described elsewhere in the repository are targets unless accompanied by a
+retained, reproducible measurement.
+
+## Run locally
+
+### Prerequisites
+
 - Docker Desktop
-- .NET 8.0 SDK
-- Node.js 20+
+- .NET 8 SDK
+- Node.js 20 or later
 
-**Optional** (for Kubernetes deployment):
-- kubectl
-- Azure CLI
-- Azure subscription
+### 1. Start local dependencies
 
-## Local Development
-
-### 1. Clone Repository
-```bash
-git clone <repository-url>
-cd fitlife-personalization-engine
+```powershell
+docker compose up -d sqlserver redis zookeeper kafka
 ```
 
-### 2. Start Infrastructure
-```bash
-docker-compose up -d
+This starts SQL Server on port `1433`, Redis on `6380`, and Kafka on `9092`.
+
+### 2. Apply migrations and seed demo data
+
+The API applies pending EF Core migrations at startup. Seed the repeatable demo
+personas once:
+
+```powershell
+dotnet run --project FitLife.Api --seed
 ```
 
-This starts:
-- SQL Server (port 1433)
-- Redis (port 6380)
-- Kafka + Zookeeper (port 9092)
+### 3. Start the API
 
-### 3. Run Backend
-```bash
-cd FitLife.Api
-dotnet ef database update  # Apply migrations
-dotnet run --seed          # Seed sample data (exits after seeding)
-dotnet run                 # Start API
+```powershell
+dotnet run --project FitLife.Api
 ```
 
-API available at: `http://localhost:5269`  
-Swagger UI: `http://localhost:5269/swagger`
+- API: `http://localhost:5269`
+- Swagger: `http://localhost:5269/swagger`
+- Liveness: `http://localhost:5269/health/live`
+- Readiness: `http://localhost:5269/health/ready`
 
-### 4. Run Frontend
-```bash
+### 4. Start the SPA
+
+```powershell
 cd fitlife-web
-npm install
+npm ci --legacy-peer-deps
 npm run dev
 ```
 
-Frontend available at: `http://localhost:3000`
+Open `http://localhost:3000`.
 
-## Testing
+For the guided setup and seeded persona list, see
+[Quick Start](QUICKSTART.md) and [Demo Setup](DEMO_SETUP.md).
 
-### Unit Tests
-```bash
-dotnet test                                    # All tests
-dotnet test --filter "Category=Integration"   # Integration only
+## Verify the repository
+
+Run the same backend/frontend quality gate locally:
+
+```powershell
+.\scripts\verify.ps1
 ```
 
-### Frontend Tests
-```bash
-cd fitlife-web
-npm run test
+The script restores and builds the solution, runs backend tests, installs
+frontend dependencies, runs lint and frontend tests, builds the production SPA,
+and audits production npm dependencies.
+
+SQL Server-specific booking tests run when
+`FITLIFE_SQLSERVER_TEST_CONNECTION` points to a disposable SQL Server database
+host. They create and remove isolated test databases:
+
+```powershell
+$env:FITLIFE_SQLSERVER_TEST_CONNECTION = "<SQL Server test connection>"
+dotnet test FitLife.Tests --filter "FullyQualifiedName~BookingConcurrencyTests"
 ```
 
-### Manual API Testing
+The latest local Phase 2 gate completed with 90 backend tests and 18 frontend
+tests passing, including the SQL Server concurrency and rollback harnesses. This
+is local verification evidence, not a production performance or availability
+claim.
 
-**Register User**:
-```bash
-curl -X POST http://localhost:5269/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "test@example.com",
-    "password": "TestPass123!",
-    "firstName": "Test",
-    "lastName": "User",
-    "fitnessLevel": "Intermediate",
-    "preferredClassTypes": ["Yoga", "HIIT"]
-  }'
-```
+## API surface
 
-**Get Recommendations**:
-```bash
-curl http://localhost:5269/api/recommendations/{userId}?limit=10 \
-  -H "Authorization: Bearer {token}"
-```
+| Area | Routes |
+|---|---|
+| Authentication | `POST /api/auth/register`, `POST /api/auth/login` |
+| Members | `GET /api/users/{id}`, `PUT /api/users/{id}/preferences`, `DELETE /api/users/{id}` |
+| Classes | `GET /api/classes`, `GET /api/classes/{id}`, `GET /api/classes/popular` |
+| Booking | `POST /api/classes/{id}/book`, `POST /api/classes/{id}/cancel` |
+| Catalog management | `POST /api/classes`, `PUT /api/classes/{id}`, `DELETE /api/classes/{id}` |
+| Recommendations | `GET /api/recommendations/{userId}`, `POST /api/recommendations/{userId}/refresh` |
+| Events | `POST /api/events`, `POST /api/events/batch` |
+| Operations | `GET /health/live`, `GET /health/ready`, `GET /health` |
 
-**Track Event**:
-```bash
-curl -X POST http://localhost:5269/api/events \
-  -H "Authorization: Bearer {token}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "userId": "{userId}",
-    "itemId": "class_001",
-    "eventType": "View",
-    "metadata": { "source": "browse" }
-  }'
-```
+Swagger provides the complete request and response schemas in Development.
 
-### Verify Infrastructure
+## Security and data integrity
 
-**Redis**:
-```bash
-docker exec -it fitlife-redis redis-cli
-> KEYS rec:*
-> GET rec:{userId}
-> TTL rec:{userId}
-```
+- Passwords are hashed with BCrypt.
+- JWT authentication protects member operations.
+- User, recommendation, and event routes enforce subject ownership.
+- Catalog mutations require the `ManageCatalog` operator policy.
+- Client-supplied registration data cannot grant the operator role.
+- Production startup rejects placeholder secrets, local dependency endpoints,
+  and unsafe demo-operator configuration.
+- Booking foreign keys, status values, active uniqueness, capacity bounds, and
+  idempotency-key uniqueness are enforced in SQL Server.
+- Booking creation and cancellation invalidate recommendation cache entries only
+  after the database transaction commits.
 
-**Kafka**:
-```bash
-docker exec -it fitlife-kafka kafka-console-consumer \
-  --bootstrap-server localhost:9092 \
-  --topic user-events \
-  --from-beginning
-```
+FitLife is a demonstration system and should be used only with seeded or
+synthetic data. It is not intended to collect real health information.
 
-## API Endpoints
+## Delivery status
 
-### Authentication
-- `POST /api/auth/register` - Register new user
-- `POST /api/auth/login` - Login and receive JWT token
+### Verified in the repository
 
-### Users
-- `GET /api/users/{id}` - Get user profile (requires auth)
-- `PUT /api/users/{id}` - Update user profile (requires auth)
+- Backend build and tests.
+- Frontend lint, tests, and production build.
+- Production npm dependency audit.
+- SQL Server booking concurrency and forced-failure rollback behavior.
+- Authorization denial and allowance paths.
+- Liveness/readiness behavior under dependency failure.
 
-### Classes
-- `GET /api/classes` - List classes with filters (type, difficulty, date)
-- `GET /api/classes/{id}` - Get class details
-- `POST /api/classes/{id}/book` - Book a class (requires auth)
+### Implemented, with further hardening planned
 
-### Recommendations
-- `GET /api/recommendations/{userId}` - Get personalized recommendations (requires auth)
-- `POST /api/recommendations/{userId}/refresh` - Force regenerate recommendations (requires auth)
+- Kafka producer and consumer.
+- Scheduled recommendation generation and user profiling.
+- Kubernetes manifests and horizontal-scaling configuration.
 
-### Events
-- `POST /api/events` - Track single event (requires auth)
-- `POST /api/events/batch` - Track multiple events (requires auth)
+The Kafka consumer still needs durable event deduplication, and scheduled
+workers are currently co-located with the API. Those workers must receive an
+explicit singleton owner or separate deployment before horizontal API scaling
+is enabled.
 
-### Health
-- `GET /health/live` - Process liveness without external dependencies
-- `GET /health/ready` - Database and Redis readiness
-- `GET /health` - Compatibility alias for readiness
+### Not currently claimed
 
-**Full API documentation**: See Swagger UI at `/swagger` when running locally
+- A live public FitLife deployment.
+- A live AKS environment.
+- Measured latency, throughput, cache-hit, availability, or consumer-lag
+  results.
+- Real users, adoption, retention improvement, or commercial use.
 
-## Recommendation Algorithm
+GitHub Actions currently runs validation. Image publishing and Azure deployment
+jobs remain intentionally disabled until a deployment target is selected and
+provisioned.
 
-**9-Factor Scoring Formula**:
-```
-TotalScore = 
-  FitnessLevelMatch × 10 +        // Beginner/Intermediate/Advanced alignment
-  PreferredClassType × 15 +        // User's explicit preferences
-  FavoriteInstructor × 20 +        // Highest weight
-  TimePreference × 8 +             // Historical booking hour patterns
-  ClassRating × 2 +                // Average rating (4.8 → 9.6 points)
-  AvailabilityBonus +              // -5 if <20% spots, +3 if >80% spots
-  SegmentBoost × 12 +              // YogaEnthusiast gets +12 for Yoga classes
-  RecencyBonus +                   // +5 if <1 day away, +3 if <3 days
-  PopularityBonus                  // +8 if >50 bookings/week
-```
+## Technology
 
-| Factor | Weight | Description |
-|--------|--------|-------------|
-| **Favorite Instructor** | 20 | HIGHEST weight - matches user's instructor preferences |
-| **Preferred Class Type** | 15 | User's explicitly selected class types (Yoga, Spin, etc.) |
-| **Segment Boost** | 12 | User segment alignment (YogaEnthusiast → +12 for Yoga classes) |
-| **Fitness Level** | 10 | Beginner/Intermediate/Advanced alignment |
-| **Time Preference** | 8 | Historical booking patterns (weekday evenings, weekend mornings) |
-| **Recency Bonus** | Up to 5 | +5 if class starts <1 day, +3 if <3 days |
-| **Popularity Bonus** | Up to 8 | +8 if >50 bookings/week |
-| **Class Rating** | 2 | Average rating (4.8 → 9.6 points) |
-| **Availability Bonus** | -5 to +3 | -5 if <20% spots, +3 if >80% spots available |
-
-**User Segments** (recalculated every 30 minutes):
-- Beginner (<5 completed classes)
-- HighlyActive (5+ classes/week)
-- YogaEnthusiast (>60% yoga classes in last 30 days)
-- StrengthTrainer (>60% strength classes)
-- CardioLover (>60% cardio classes)
-- WeekendWarrior (>60% bookings Sat-Sun)
-- General (default)
-
-**Caching Strategy**:
-- Redis key: `rec:{userId}`
-- TTL: 10 minutes
-- Also persisted to `Recommendations` table
-- Cache invalidated on: Book event, profile update, segment change
-
----
-
-## Project Structure
-
-```
-FitLife.Api/               # Web API + Background Services
-  Controllers/             # AuthController, RecommendationsController, etc.
-  BackgroundServices/      # EventConsumer, RecGenerator, UserProfiler
-  DTOs/                    # Request/response models
-  
-FitLife.Core/              # Business logic (scoring engine, services)
-  Services/                # RecommendationService, ScoringEngine
-  Models/                  # User, Class, Booking, Interaction, Recommendation
-  Interfaces/              # IRecommendationService, etc.
-  
-FitLife.Infrastructure/    # External dependencies
-  Data/                    # EF Core DbContext, migrations
-  Repositories/            # UserRepository, ClassRepository
-  Kafka/                   # KafkaProducer, event schemas
-  Cache/                   # RedisCacheService
-  Auth/                    # JwtTokenService
-  
-fitlife-web/               # Vue 3 SPA
-  src/
-    components/            # ClassCard, RecommendationList
-    views/                 # HomePage, ClassSearchPage, ProfilePage
-    stores/                # Pinia stores (recommendations, auth)
-    services/              # Axios API client
-
-FitLife.Tests/             # Unit + integration tests
-  Services/                # ScoringEngineTests, RecommendationServiceTests
-```
-
-## Docker Deployment
-
-### Build Images
-```bash
-docker build -t fitlife-api:latest -f FitLife.Api/Dockerfile .
-docker build -t fitlife-web:latest -f fitlife-web/Dockerfile ./fitlife-web
-```
-
-### Run with Docker Compose
-```bash
-docker-compose up -d
-```
-
-Access:
-- Frontend: http://localhost:3000
-- API: http://localhost:5269
-- Swagger: http://localhost:5269/swagger
-
-## Kubernetes Deployment
-
-### Prerequisites
-```bash
-# Create Azure resources
-az group create --name fitlife-rg --location eastus
-az acr create --name fitlifeacr --resource-group fitlife-rg --sku Basic
-az aks create --name fitlife-aks --resource-group fitlife-rg --node-count 3 --attach-acr fitlifeacr
-
-# Get credentials
-az aks get-credentials --resource-group fitlife-rg --name fitlife-aks
-```
-
-### Build and Push Images
-```bash
-az acr login --name fitlifeacr
-
-docker build -t fitlifeacr.azurecr.io/fitlife-api:latest -f FitLife.Api/Dockerfile .
-docker push fitlifeacr.azurecr.io/fitlife-api:latest
-
-docker build -t fitlifeacr.azurecr.io/fitlife-web:latest -f fitlife-web/Dockerfile ./fitlife-web
-docker push fitlifeacr.azurecr.io/fitlife-web:latest
-```
-
-### Deploy to Kubernetes
-```bash
-# Update manifests with your ACR registry
-sed -i 's/<ACR_REGISTRY>/fitlifeacr.azurecr.io/g' k8s/*.yaml
-
-# Apply manifests
-kubectl apply -f k8s/namespace.yaml
-kubectl apply -f k8s/configmap.yaml
-kubectl apply -f k8s/secrets.yaml
-kubectl apply -f k8s/api-deployment.yaml
-kubectl apply -f k8s/web-deployment.yaml
-kubectl apply -f k8s/ingress.yaml
-kubectl apply -f k8s/hpa.yaml
-
-# Check status
-kubectl get pods -n fitlife
-kubectl get services -n fitlife
-```
-
-### Monitor Deployment
-```bash
-kubectl rollout status deployment/fitlife-api -n fitlife
-kubectl logs -f deployment/fitlife-api -n fitlife
-kubectl get hpa -n fitlife
-```
-
-## CI/CD Pipeline
-
-### GitHub Secrets Required
-Add these to repository settings:
-- `ACR_USERNAME` - Azure Container Registry username
-- `ACR_PASSWORD` - Azure Container Registry password
-- `AZURE_CREDENTIALS` - Service principal JSON for AKS access
-
-### Workflow Triggers (designed deployment behavior — see current status below)
-- Push to `main` → Deploy to production
-- Push to `development` → Deploy to staging
-- Pull request → Run tests only
-
-### Pipeline Stages
-1. Test - Run .NET unit tests
-2. Build - Build Docker images with caching
-3. Push - Push images to Azure Container Registry
-4. Deploy - Deploy to AKS namespace
-5. Smoke Test - Verify health endpoints
-
-**Current status**: backend and frontend validation run for pushes to `main` and `development`, pull requests to `main`, and manual workflow dispatches. Image build/push and deployment stages are currently disabled (`if: false` in `.github/workflows/deploy.yml`) pending infrastructure provisioning. They are configured, not live.
-
-## Configuration
-
-### Backend (`appsettings.json`)
-```json
-{
-  "ConnectionStrings": {
-    "DefaultConnection": "Server=localhost,1433;Database=FitLife;User Id=sa;Password=YourStrong@Passw0rd;TrustServerCertificate=true"
-  },
-  "Jwt": {
-    "Secret": "your-secret-key-min-32-chars",
-    "Issuer": "FitLife",
-    "Audience": "FitLifeUsers",
-    "ExpirationHours": 24
-  },
-  "Kafka": {
-    "BootstrapServers": "localhost:9092"
-  },
-  "Redis": {
-    "ConnectionString": "localhost:6380"
-  },
-  "BackgroundWorkers": {
-    "EventConsumer": { "Enabled": true },
-    "RecommendationGenerator": { "Enabled": true, "IntervalMinutes": 10 },
-    "UserProfiler": { "Enabled": true, "IntervalMinutes": 30 }
-  }
-}
-```
-
-### Frontend (`.env`)
-```env
-VITE_API_URL=http://localhost:5269
-```
-
-## Security
-
-**Authentication**:
-- JWT tokens with 24-hour expiration
-- BCrypt password hashing (work factor 12)
-- Token stored in localStorage (frontend)
-- Authorization header: `Bearer {token}`
-
-**Authorization**:
-- Users can only access their own data (userId validation)
-- Protected endpoints require valid JWT token
-
-**Network Security**:
-- CORS configured with allowed origins
-- Rate limiting: 10 req/sec, 100 req/min per IP
-- TLS termination at Kubernetes Ingress
-- Kubernetes Secrets for sensitive data
-
-## Performance
-
-**Targets**:
-- API P50 latency: <100ms
-- API P95 latency: <200ms
-- Cache hit rate: >90%
-- Kafka consumer lag: <1 minute
-- Recommendation generation: <2 seconds
-
-**Scaling**:
-- Kubernetes manifests configure API scaling from 3-10 pods at 70% CPU utilization
-- Kubernetes manifests configure web scaling from 2-5 pods at 70% CPU utilization
-- Background workers are currently co-located with each API replica; scheduled
-  workers must be separated or coordinated before enabling horizontal API scale
-
-## Troubleshooting
-
-**Frontend not connecting to API**:
-→ Verify CORS configuration in `appsettings.json`
-→ Check `VITE_API_URL` in `.env` file
-→ Inspect browser console for errors
-
-**Database connection failed**:
-→ Confirm SQL Server is running: `docker ps`
-→ Verify connection string in `appsettings.json`
-→ Run migrations: `dotnet ef database update`
-
-**Kafka events not processing**:
-→ Check Kafka is running: `docker logs fitlife-kafka`
-→ Verify `EventConsumerService` is enabled in configuration
-→ Check API logs for Kafka connection errors
-
-**Recommendations not showing**:
-→ Ensure user has interaction history (track events first)
-→ Check `RecommendationGeneratorService` logs
-→ Verify Redis cache is working: `redis-cli KEYS rec:*`
-→ Force refresh: `POST /api/recommendations/{userId}/refresh`
+- .NET 8, ASP.NET Core, EF Core 9, SQL Server
+- Vue 3, TypeScript, Pinia, Vite, Tailwind CSS
+- Redis, Kafka, Docker Compose
+- xUnit, Vitest, FluentAssertions, Moq
+- GitHub Actions
+- Configured Kubernetes and Azure-oriented deployment assets
 
 ## Documentation
 
-- **Architecture**: `public-docs/Architecture.md` - System design and component interactions
-- **Design Decisions**: `public-docs/FitLife-Decisions.md` - Key architectural choices and trade-offs explained
-- **Recommendations**: `public-docs/Recommendations.md` - Scoring algorithm details
-
-## Git Workflow
-
-**Branch Strategy**:
-```
-main (protected)
-  └── development (integration)
-       └── feature/phase-name
-```
-
-**Commit Format**:
-```bash
-<type>(<scope>): <description>
-
-# Types: feat, fix, chore, docs, refactor, test
-# Examples:
-git commit -m "feat(scoring): Add instructor preference weight to algorithm"
-git commit -m "fix(cache): Correct Redis key pattern from recs: to rec:"
-git commit -m "chore(docker): Add health checks to compose services"
-```
+- [Quick Start](QUICKSTART.md)
+- [Demo Setup](DEMO_SETUP.md)
+- [Architecture](public-docs/Architecture.md)
+- [Design Decisions](public-docs/FitLife-Decisions.md)
+- [Recommendation Model](public-docs/Recommendations.md)
 
 ## License
 
-MIT
+[MIT](LICENSE)

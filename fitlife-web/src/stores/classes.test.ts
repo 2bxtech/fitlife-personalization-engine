@@ -8,6 +8,7 @@ vi.mock('@/services/classService', () => ({
     getClasses: vi.fn(),
     getClassById: vi.fn(),
     bookClass: vi.fn(),
+    cancelBooking: vi.fn(),
   },
 }))
 
@@ -28,6 +29,7 @@ const mockClass = {
   totalRatings: 42,
   weeklyBookings: 25,
   isActive: true,
+  isBookedByCurrentUser: false,
 }
 
 describe('useClassStore', () => {
@@ -87,15 +89,67 @@ describe('useClassStore', () => {
     expect(store.currentClass).toEqual(mockClass)
   })
 
-  it('bookClass calls service and refreshes classes', async () => {
+  it('bookClass updates the affected class from the response', async () => {
     const { classService } = await import('@/services/classService')
-    vi.mocked(classService.bookClass).mockResolvedValueOnce(mockClass)
-    vi.mocked(classService.getClasses).mockResolvedValueOnce([mockClass])
+    const bookedClass = {
+      ...mockClass,
+      currentEnrollment: 16,
+      availableSpots: 14,
+      isBookedByCurrentUser: true,
+    }
+    vi.mocked(classService.bookClass).mockResolvedValueOnce({
+      classData: bookedClass,
+      message: 'Class booked successfully',
+    })
 
     const store = useClassStore()
-    await store.bookClass('c1')
+    store.classes = [mockClass]
+    const message = await store.bookClass('c1')
 
     expect(classService.bookClass).toHaveBeenCalledWith('c1')
-    expect(classService.getClasses).toHaveBeenCalled() // Refreshes list
+    expect(store.classes[0]).toEqual(bookedClass)
+    expect(message).toBe('Class booked successfully')
+    expect(store.actionClassId).toBeNull()
+  })
+
+  it('cancelBooking updates booking state without refetching the list', async () => {
+    const { classService } = await import('@/services/classService')
+    const bookedClass = {
+      ...mockClass,
+      currentEnrollment: 16,
+      availableSpots: 14,
+      isBookedByCurrentUser: true,
+    }
+    const cancelledClass = {
+      ...mockClass,
+      isBookedByCurrentUser: false,
+    }
+    vi.mocked(classService.cancelBooking).mockResolvedValueOnce({
+      classData: cancelledClass,
+      message: 'Booking cancelled successfully',
+    })
+
+    const store = useClassStore()
+    store.classes = [bookedClass]
+    const message = await store.cancelBooking('c1')
+
+    expect(classService.cancelBooking).toHaveBeenCalledWith('c1')
+    expect(store.classes[0]).toEqual(cancelledClass)
+    expect(message).toBe('Booking cancelled successfully')
+    expect(classService.getClasses).not.toHaveBeenCalled()
+  })
+
+  it('bookClass surfaces the API domain message', async () => {
+    const { classService } = await import('@/services/classService')
+    vi.mocked(classService.bookClass).mockRejectedValueOnce({
+      isAxiosError: true,
+      response: { data: { message: 'Class is full' } },
+    })
+
+    const store = useClassStore()
+
+    await expect(store.bookClass('c1')).rejects.toThrow('Class is full')
+    expect(store.error).toBe('Class is full')
+    expect(store.actionClassId).toBeNull()
   })
 })
