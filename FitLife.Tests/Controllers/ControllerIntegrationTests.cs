@@ -923,10 +923,12 @@ public class RecommendationsControllerTests : IClassFixture<FitLifeWebApplicatio
 public class EventsControllerTests : IClassFixture<FitLifeWebApplicationFactory>
 {
     private readonly HttpClient _client;
+    private readonly FitLifeWebApplicationFactory _factory;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     public EventsControllerTests(FitLifeWebApplicationFactory factory)
     {
+        _factory = factory;
         _client = factory.CreateClient();
     }
 
@@ -988,5 +990,69 @@ public class EventsControllerTests : IClassFixture<FitLifeWebApplicationFactory>
         var response = await _client.PostAsJsonAsync("/api/events", CreateEvent("some-user"));
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task TrackEvent_PublishesVersionedEnvelopeWithStableEventId()
+    {
+        var (token, user) = await RegisterAndGetAuthAsync();
+        _client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", token);
+        var publisher =
+            _factory.Services.GetRequiredService<RecordingEventPublisher>();
+        publisher.Reset();
+        var eventId = Guid.NewGuid().ToString();
+
+        var eventDto = CreateEvent(user.Id);
+        eventDto.EventId = eventId;
+        eventDto.SchemaVersion = 1;
+        eventDto.OccurredAt = DateTime.UtcNow.AddMinutes(-1);
+
+        var response = await _client.PostAsJsonAsync("/api/events", eventDto);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        publisher.PublishedEvents.Should().ContainSingle();
+        var published = publisher.PublishedEvents.Single();
+        published.EventId.Should().Be(eventId);
+        published.SchemaVersion.Should().Be(1);
+        published.CorrelationId.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task TrackEventBatch_InvalidItem_PublishesNothing()
+    {
+        var (token, user) = await RegisterAndGetAuthAsync();
+        _client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", token);
+        var publisher =
+            _factory.Services.GetRequiredService<RecordingEventPublisher>();
+        publisher.Reset();
+        var invalid = CreateEvent(user.Id);
+        invalid.SchemaVersion = 2;
+
+        var response = await _client.PostAsJsonAsync(
+            "/api/events/batch",
+            new[] { CreateEvent(user.Id), invalid });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        publisher.PublishedEvents.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task TrackEvent_PublisherFailure_ReturnsServerError()
+    {
+        var (token, user) = await RegisterAndGetAuthAsync();
+        _client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", token);
+        var publisher =
+            _factory.Services.GetRequiredService<RecordingEventPublisher>();
+        publisher.Reset();
+        publisher.FailNextPublish = true;
+
+        var response = await _client.PostAsJsonAsync(
+            "/api/events",
+            CreateEvent(user.Id));
+
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
     }
 }

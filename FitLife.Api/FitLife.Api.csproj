@@ -25,4 +25,8 @@
     <ProjectReference Include="..\FitLife.Infrastructure\FitLife.Infrastructure.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="FitLife.Tests" />
+  </ItemGroup>
+
 </Project>

@@ -102,6 +102,10 @@ public class FitLifeDbContext : DbContext
         modelBuilder.Entity<Interaction>(entity =>
         {
             entity.HasKey(e => e.Id);
+            entity.Property(e => e.EventId).HasMaxLength(100);
+            entity.HasIndex(e => e.EventId)
+                .IsUnique()
+                .HasFilter("[EventId] IS NOT NULL");
             
             // Critical index for recent events query
             entity.HasIndex(e => new { e.UserId, e.Timestamp })

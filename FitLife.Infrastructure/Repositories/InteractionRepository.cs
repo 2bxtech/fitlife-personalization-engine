@@ -43,4 +43,10 @@ public class InteractionRepository : Repository<Interaction>, IInteractionReposi
             .OrderByDescending(i => i.Timestamp)
             .ToListAsync();
     }
+
+    public Task<bool> ExistsByEventIdAsync(string eventId)
+    {
+        return _dbSet.AnyAsync(interaction =>
+            interaction.EventId == eventId);
+    }
 }

@@ -256,12 +256,14 @@ User logs in → Load dashboard
 User views class → trackClassView(classId)
     → POST /api/events
     → EventService.TrackEvent()
-    → Validate event schema
-    → KafkaProducer.ProduceAsync("user-events", event)
-    → Return 202 Accepted (immediate)
+    → Validate the versioned event envelope
+    → KafkaProducer.PublishAsync("user-events", event)
+    → Wait for broker acknowledgement
+    → Return 202 Accepted with the stable event ID
     → [Async] EventConsumerService polls Kafka
     → Consume message from "user-events" topic
-    → Save to Interactions table
+    → Ignore an EventId already stored
+    → Save EventId and interaction in SQL Server
     → Update user's last active timestamp
     → Commit Kafka offset
     → [Later] RecommendationGeneratorService runs
@@ -319,7 +321,8 @@ tracking flow; booking does not publish a second event.
 - **Kafka Consumer Groups**: Multiple consumers for parallelism
 - **Partition Strategy**: Events partitioned by userId (affinity)
 - **Batch Processing**: Process 1000 users per batch
-- **Idempotency**: Duplicate events handled gracefully
+- **Idempotency**: A unique filtered SQL index on `Interactions.EventId`
+  prevents the same event from being stored twice
 
 ### Caching Strategy
 

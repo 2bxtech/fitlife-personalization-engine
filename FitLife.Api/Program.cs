@@ -97,6 +97,8 @@ builder.Services.AddScoped<IRecommendationService, RecommendationService>();
 
 // Register Kafka producer (singleton - connection pooling)
 builder.Services.AddSingleton<KafkaProducer>();
+builder.Services.AddSingleton<IEventPublisher>(sp =>
+    sp.GetRequiredService<KafkaProducer>());
 
 // Register Redis cache service (singleton - connection pooling)
 builder.Services.AddSingleton<RedisCacheService>();
