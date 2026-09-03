@@ -1,6 +1,16 @@
 # FitLife Architecture Documentation
 
-**High-level system design, component interactions, and strategic technology choices.** For implementation-level decisions (specific patterns, timing values, weights), see [FitLife-Decisions.md](FitLife-Decisions.md).
+**High-level system design, component interactions, and technology choices.** For implementation-level decisions (specific patterns, timing values, weights), see [FitLife-Decisions.md](FitLife-Decisions.md).
+
+## Status labels
+
+This is a work-in-progress portfolio case study. Claims in this document carry one of three labels:
+
+- **Implemented** — code exists in this repository and runs against the local Docker Compose stack.
+- **Configured** — a config file or manifest exists, but the behavior it describes has not been exercised at the scale it implies.
+- **Planned** — not built. Included to show intended direction.
+
+Nothing here has been load-tested. No latency, throughput, or availability figure in this document is a measurement.
 
 ## Table of Contents
 1. [System Overview](#system-overview)
@@ -13,577 +23,428 @@
 
 ## System Overview
 
-FitLife follows a **microservices-inspired architecture** with event-driven patterns, designed for horizontal scalability and loose coupling between components.
+FitLife is a monolithic .NET 8 API with event-driven ingestion and co-located background workers. It is structured so that workers can be extracted into separate services later, but it does not currently run as microservices.
 
-### High-Level Architecture
+### Local runtime (Implemented)
+
+This is what `docker-compose.yml` actually starts:
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         CLIENT LAYER                             │
-│  ┌────────────────────────────────────────────────────────────┐ │
-│  │  Vue.js 3 SPA (Progressive Web App)                        │ │
-│  │  - State Management (Pinia)                                │ │
-│  │  - Client-side Routing (Vue Router)                        │ │
-│  │  - API Client (Axios with interceptors)                    │ │
-│  └────────────────────────────────────────────────────────────┘ │
-└──────────────────────────┬───────────────────────────────────────┘
-                           │ HTTPS/REST
-                           ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                       API GATEWAY (Optional)                     │
-│  ┌────────────────────────────────────────────────────────────┐ │
-│  │  Nginx / Azure API Management                              │ │
-│  │  - SSL Termination                                         │ │
-│  │  - Rate Limiting (100 req/min per user)                    │ │
-│  │  - Request Routing                                         │ │
-│  │  - JWT Validation                                          │ │
-│  └────────────────────────────────────────────────────────────┘ │
-└──────────────────────────┬───────────────────────────────────────┘
-                           │
-        ┌──────────────────┴──────────────────┐
-        │                                     │
-        ▼                                     ▼
-┌─────────────────┐                  ┌─────────────────┐
-│  API Service    │                  │  API Service    │
-│  (Pod 1)        │                  │  (Pod 2)        │
-└────────┬────────┘                  └────────┬────────┘
-         │                                    │
-         └──────────┬─────────────────────────┘
-                    │
-         ┌──────────┴──────────┐
-         │                     │
-         ▼                     ▼
-┌─────────────────┐   ┌─────────────────┐
-│  Redis Cache    │   │  Event Stream   │
-│  - Recs (10m)   │   │  (Kafka)        │
-│  - Sessions     │   │  - user-events  │
-│  - Popular      │   │  - system-events│
-└─────────────────┘   └────────┬────────┘
-         │                     │
-         │                     ▼
-         │            ┌─────────────────┐
-         │            │  Background     │
-         │            │  Workers        │
-         │            │  - Event        │
-         │            │    Consumer     │
-         │            │  - Rec Gen      │
-         │            │  - Profiler     │
-         │            └────────┬────────┘
-         │                     │
-         └──────────┬──────────┘
-                    ▼
-         ┌─────────────────────┐
-         │  Azure SQL Database │
-         │  - Users            │
-         │  - Classes          │
-         │  - Interactions     │
-         │  - Recommendations  │
-         └─────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│  Vue.js 3 SPA                              :3000         │
+│  - Pinia state, Vue Router, Axios                        │
+└───────────────────────────┬──────────────────────────────┘
+                            │ HTTP (plaintext, local dev)
+                            ▼
+┌──────────────────────────────────────────────────────────┐
+│  FitLife.Api (single container)            :5269→8080    │
+│  ├─ Controllers (Events, Classes, Recommendations, …)    │
+│  └─ Co-located IHostedService workers:                   │
+│       EventConsumerService                               │
+│       RecommendationGeneratorService                     │
+│       UserProfilerService                                │
+└──────┬──────────────────┬────────────────────┬───────────┘
+       │                  │                    │
+       ▼                  ▼                    ▼
+┌─────────────┐   ┌────────────────┐   ┌──────────────────┐
+│ Redis 7     │   │ Kafka 7.5.0    │   │ SQL Server 2022  │
+│ :6380→6379  │   │ (single broker,│   │ :1433            │
+│             │   │  ZooKeeper)    │   │                  │
+│ rec:{userId}│   │ user-events    │   │ Users            │
+│             │   │ user-events-dlq│   │ Classes          │
+│             │   │                │   │ Interactions     │
+│             │   │ RF=1           │   │ Recommendations  │
+│             │   │ auto-create on │   │ Bookings         │
+└─────────────┘   └────────────────┘   └──────────────────┘
 ```
+
+**One broker, replication factor 1.** `KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1` and a single `kafka` service mean there is no replication locally. Topics are auto-created (`KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"`) at the broker default partition count, so `user-events` is single-partition unless created explicitly. Both facts constrain the guarantees described below.
+
+### Deployment target (Planned)
+
+Kubernetes with a managed SQL and a replicated Kafka cluster. Manifests exist in the repository; see [Scalability & Performance](#scalability--performance) for why they are not evidence that the current worker topology scales.
 
 ## Architecture Principles
 
-### 1. Separation of Concerns
-- **Presentation Layer**: Vue.js handles all UI/UX
-- **API Layer**: .NET Core exposes RESTful endpoints
-- **Business Logic**: Services contain domain logic
-- **Data Layer**: Repositories abstract data access
+### 1. Separation of Concerns (Implemented)
+- **Presentation**: Vue.js SPA
+- **API**: ASP.NET Core controllers
+- **Domain**: services (`RecommendationService`, `ScoringEngine`)
+- **Data**: EF Core repositories over `FitLifeDbContext`
 
-### 2. Event-Driven Design
-- **Async Communication**: User actions publish events to Kafka
-- **Loose Coupling**: Services don't directly depend on each other
-- **Eventual Consistency**: Events processed asynchronously
-- **Event Sourcing**: Complete audit trail of user interactions
+### 2. Event-Driven Ingestion (Implemented)
+- `/api/events` publishes a versioned envelope to Kafka and waits for broker acknowledgement before responding.
+- Downstream processing is asynchronous. Interaction rows appear after the consumer processes the message, not when the API responds.
+- Partition key is `UserId`, which preserves per-user ordering within a partition.
+- The `Interactions` table is an append-only record of consumed events. It is not event sourcing: application state is not rebuilt by replaying it.
 
-### 3. Caching Strategy
-- **Cache-Aside Pattern**: Check cache first, load on miss
-- **TTL-based Expiration**: 10-minute TTL for recommendations
-- **Write-Through**: Update cache when data changes
-- **Cache Warming**: Pre-compute popular recommendations
+### 3. Caching (Implemented)
+- **Cache-aside**: check Redis, fall back to the `Recommendations` table, then regenerate.
+- **TTL**: 10 minutes on `rec:{userId}`.
+- **Explicit invalidation**: booking and cancellation invalidate after commit; the event consumer invalidates on `Book`, `Cancel`, `Complete`, and `Rate`.
 
-### 4. API Design
-- **RESTful**: Standard HTTP methods and status codes
-- **Versioning**: URL-based (`/api/v1/...`)
-- **Pagination**: Cursor-based for large datasets
-- **HATEOAS**: Links to related resources
+There is no write-through caching and no Redis-backed session store. JWTs are stateless.
+
+### 4. API Design (Implemented)
+- REST over JSON, standard status codes.
+- Responses use a consistent `ApiResponse<T>` envelope.
+- Routes are unversioned (`/api/events`, `/api/classes`). URL versioning is **Planned**.
+- Offset-based pagination on list endpoints. Cursor pagination and HATEOAS links are **Planned**.
 
 ## Component Design
 
-### 1. API Service (.NET Core 8)
+### 1. API Service (.NET 8)
 
-#### Controllers
+#### Controllers (Implemented)
 ```
-UsersController        → User profile CRUD
-ClassesController      → Class catalog management
-RecommendationsController → Personalized recommendations
-EventsController       → Event tracking
-AuthController         → Authentication/authorization
-```
-
-#### Service Layer
-```
-UserService            → User business logic
-RecommendationService  → Generate & retrieve recommendations
-EventService           → Validate & publish events
-ScoringEngine          → Calculate recommendation scores
+UsersController            → User profile
+ClassesController          → Class catalog, booking, cancellation
+RecommendationsController  → Personalized recommendations
+EventsController           → Event tracking (single + batch)
+AuthController             → Registration, login
 ```
 
-#### Infrastructure
+`EventsController` depends on `IEventPublisher` directly. There is no `EventService` indirection.
+
+#### Domain services (Implemented)
 ```
-KafkaProducer          → Publish events to Kafka
-RedisCacheService      → Cache management
-JwtService             → Token generation & validation
+RecommendationService  → Generate, cache, invalidate recommendations
+ScoringEngine          → Multi-factor class scoring
 ```
 
-#### Repositories
+#### Infrastructure (Implemented)
+```
+KafkaProducer     → IEventPublisher + IDeadLetterPublisher
+RedisCacheService → ICacheService
+JwtService        → Token issuance and validation
+```
+
+#### Repositories (Implemented)
 ```
 UserRepository         → User data access
 ClassRepository        → Class data access
-InteractionRepository  → Event storage
+InteractionRepository  → Interaction reads/writes, ExistsByEventIdAsync
 ```
 
-### 2. Background Workers
+### 2. Kafka producer configuration (Implemented)
+
+From `KafkaProducer`:
+
+| Setting | Value | Effect |
+|---|---|---|
+| `Acks` | `All` | Leader waits for all in-sync replicas |
+| `EnableIdempotence` | `true` | Producer-side retry deduplication and ordering within a partition |
+| `MaxInFlight` | `5` | Compatible with idempotence |
+| `MessageTimeoutMs` / `RequestTimeoutMs` | `30000` | Publish fails rather than hanging the request |
+| `CompressionType` | `Snappy` | |
+| `LingerMs` / `BatchSize` | `10` / `16384` | Small batching |
+
+**`acks=all` does not prove durability on the local stack.** With one broker and replication factor 1, the in-sync replica set is a single node, so `acks=all` is equivalent to `acks=1`. The acknowledgement means one broker wrote the record to its log. Replicated durability requires a multi-broker cluster with `min.insync.replicas` ≥ 2, which is **Planned**.
+
+**Producer idempotence is not end-to-end idempotency.** It suppresses duplicates caused by producer retries within a producer session and partition. It does nothing about a client that retries an HTTP request, and nothing about a consumer that reprocesses a message after a rebalance. Those are handled separately, below.
+
+### 3. Background Workers (Implemented, co-located)
+
+All three run as `IHostedService` inside the API process.
 
 #### EventConsumerService
-- **Purpose**: Process user events from Kafka
-- **Frequency**: Real-time (continuous polling)
-- **Operations**:
-  - Validate event schema
-  - Save to Interactions table
-  - Update user activity timestamp
-  - Update class enrollment counts
-  - Trigger recommendation refresh if needed
+- **Consumes**: `user-events`, group `fitlife-event-consumers`
+- **Offsets**: `EnableAutoCommit = false`; offsets are committed manually after processing or dead-letter handling
+- **Poll**: one message per iteration, `MaxPollIntervalMs` 300000, `SessionTimeoutMs` 45000
+- **Operations**: deserialize, validate the contract, deduplicate on `EventId`, insert an `Interaction`, invalidate the recommendation cache for `Book` / `Cancel` / `Complete` / `Rate`
+
+It does not update a user last-active timestamp and does not update class enrollment counts. Enrollment is maintained by the booking transaction, not by this consumer.
 
 #### RecommendationGeneratorService
-- **Purpose**: Batch generate recommendations
-- **Frequency**: Every 10 minutes
-- **Operations**:
-  - Fetch users needing refresh (last updated > 10 min ago)
-  - Generate recommendations using ScoringEngine
-  - Save to Recommendations table
-  - Update Redis cache
-  - Track performance metrics
+- **Frequency**: every 10 minutes
+- **Operations**: select users needing refresh, score candidates, persist to `Recommendations`, populate Redis
 
 #### UserProfilerService
-- **Purpose**: Analyze user behavior and assign segments
-- **Frequency**: Every 30 minutes
-- **Operations**:
-  - Analyze interaction history (last 30 days)
-  - Calculate behavior patterns
-  - Assign user segment (YogaEnthusiast, HighlyActive, etc.)
-  - Update User.Segment field
+- **Frequency**: every 30 minutes
+- **Operations**: analyze the last 30 days of interactions, assign a segment, update `User.Segment`
 
-### 3. Frontend (Vue.js 3)
+### 4. Frontend (Implemented)
 
-#### State Management (Pinia)
-```javascript
-authStore          → User authentication state
-userStore          → Current user profile
-classStore         → Class catalog and filters
-recommendationStore → Personalized recommendations
 ```
-
-#### Services
-```javascript
-authService        → Login, register, token management
-classService       → Fetch classes, search, filter
-recommendationService → Get recommendations, track events
-analyticsService   → Track user interactions
-```
-
-#### Key Components
-```
-ClassCard          → Display individual class
-ClassList          → Grid of classes with pagination
-ClassFilter        → Filter UI (type, time, instructor)
-RecommendationFeed → Personalized class recommendations
-ProfileForm        → Edit user profile and preferences
+Pinia stores:   authStore, userStore, classStore, recommendationStore
+Services:       authService, classService, recommendationService, analyticsService
+Components:     ClassCard, ClassList, ClassFilter, RecommendationFeed, ProfileForm
 ```
 
 ## Data Flow
 
-### 1. User Registration Flow
+### 1. User Registration
 ```
-User fills form → Vue.js validates → POST /api/auth/register
-    → UserService.CreateUser()
-    → Hash password (BCrypt)
-    → Save to Users table
-    → Generate JWT token
-    → Return token + user profile
-    → Store token in localStorage
-    → Redirect to dashboard
+POST /api/auth/register
+    → hash password (BCrypt)
+    → insert User
+    → issue JWT
+    → return token + profile
 ```
 
-### 2. Class Browsing Flow
+### 2. Class Browsing
 ```
-User navigates to Classes page
-    → GET /api/classes?page=1&pageSize=20
+GET /api/classes?page=1&pageSize=20
     → ClassRepository.GetClasses()
-    → Check Redis cache (popular classes)
-    → Query database if cache miss
-    → Return ClassResponse DTOs
-    → Vue renders ClassList component
-    → User filters by type "Yoga"
-    → GET /api/classes?type=Yoga&page=1
-    → Repeat
+    → return ClassResponse DTOs (includes IsBookedByCurrentUser when authenticated)
 ```
 
-### 3. Recommendation Generation Flow
+### 3. Recommendation Generation
 ```
-User logs in → Load dashboard
-    → GET /api/recommendations/{userId}?limit=10
-    → RecommendationService.GetRecommendations()
-    → Check Redis cache (key: rec:{userId})
-    → If cache hit: return cached recommendations
-    → If cache miss:
-        → Check Recommendations table (last 10 min)
-        → If fresh: return from DB + cache
-        → If stale or missing:
-            → RecommendationService.GenerateRecommendations()
-            → Fetch user profile & segment
-            → Fetch candidate classes (upcoming, not full)
-            → For each class: ScoringEngine.CalculateScore()
-            → Sort by score descending
-            → Take top N
-            → Generate human-readable reasons
-            → Save to Recommendations table
-            → Cache in Redis (10 min TTL)
-            → Return recommendations
+GET /api/recommendations/{userId}?limit=10
+    → check Redis rec:{userId}
+    → hit  → return
+    → miss → check Recommendations table (generated < 10 min ago)
+             → fresh → return + repopulate cache
+             → stale → score candidates, persist, cache (10 min TTL), return
 ```
 
-### 4. Event Tracking Flow (Async)
+### 4. Event Tracking
+
+**Ingestion (synchronous portion):**
 ```
-User views class → trackClassView(classId)
-    → POST /api/events
-    → EventService.TrackEvent()
-    → Validate the versioned event envelope
-    → KafkaProducer.PublishAsync("user-events", event)
-    → Wait for broker acknowledgement
-    → Return 202 Accepted with the stable event ID
-    → [Async] EventConsumerService polls Kafka
-    → Consume message from "user-events" topic
-    → Ignore an EventId already stored
-    → Save EventId and interaction in SQL Server
-    → Update user's last active timestamp
-    → Retry transient processing failures up to three times
-    → Publish poison-event metadata to user-events-dlq
-    → Require dead-letter acknowledgement before skipping poison input
-    → Commit Kafka offset
-    → [Later] RecommendationGeneratorService runs
-    → Incorporates new interaction into scoring
+POST /api/events                    [Authorize]
+    → EventsController.TrackEvent()
+    → token subject must equal EventDto.UserId, else 403
+    → validate contract:
+        EventType ∈ EventTypes.ValidTypes
+        ItemId ≤ 200 chars, ItemType ≤ 50 chars
+        EventId, if supplied, must parse as a GUID
+        SchemaVersion, if supplied, must be 1
+        OccurredAt within [now-24h, now+5m]
+        Metadata ≤ 8 KiB serialized
+    → EventId := caller-supplied value, or a server-generated GUID if absent
+    → KafkaProducer.PublishAsync("user-events", key: UserId, envelope)
+    → await broker acknowledgement
+    → 200 OK { eventId, schemaVersion, occurredAt }
 ```
 
-### 5. Class Booking Flow
-```
-User clicks "Book Now" button
-    → POST /api/classes/{classId}/book
-    → Return the existing active booking for a duplicate retry
-    → Check class capacity
-    → In one database transaction:
-        → Create the durable active booking
-        → Increment class.CurrentEnrollment
-        → Create one "Book" interaction
-    → After commit, invalidate the user's recommendation cache
-    → Return booked, already-booked, full, or conflict result
+The endpoint returns **200 OK**, not 202 Accepted.
 
-User cancels the booking
-    → POST /api/classes/{classId}/cancel
-    → Find only that user's active booking
-    → In one database transaction:
-        → Mark the booking cancelled
-        → Decrement class.CurrentEnrollment once
-        → Create one "Cancel" interaction
-    → After commit, invalidate the user's recommendation cache
-    → Return cancelled, already-cancelled, not-found, or conflict result
+**Retry semantics.** Because the publish is awaited, a 200 means the broker accepted the record. If the response is lost and the caller retries, the retry is the *same logical event only if the caller supplied `EventId` and reuses the same value*. When `EventId` is omitted, the server generates a fresh GUID per request, so a retry produces a second distinct event that consumer deduplication will not collapse. Callers that need retry safety must generate and retain their own `EventId`.
+
+**Consumption (asynchronous portion):**
+```
+EventConsumerService.Consume()
+    ↓
+deserialize UserEvent
+    ├─ null or malformed JSON → DLQ immediately, no retry
+    ↓
+validate contract (schema version, EventId GUID, required fields,
+                   OccurredAt window, metadata size)
+    ├─ invalid → DLQ immediately, no retry
+    ↓
+ExistsByEventIdAsync(EventId)?
+    ├─ yes → skip insert
+    └─ no  → insert Interaction
+             └─ SQL 2601/2627 on IX EventId → treat as duplicate
+    ↓
+EventType ∈ {Book, Cancel, Complete, Rate}?
+    └─ yes → InvalidateCacheAsync(userId)
+    ↓
+unhandled exception at any point above
+    → retry up to MaxAttempts (default 3, clamped 1–10)
+      with linear backoff (default 250ms × attempt)
+    → attempts exhausted → publish DLQ metadata, await ack
+    ↓
+commit source offset          ← separate, non-transactional step
 ```
 
-Clients may send an `Idempotency-Key` header (up to 100 characters). Active
-user/class uniqueness and idempotency-key uniqueness are database-enforced.
-Cancellation is scoped to the authenticated user, and repeated cancellation is
-safe: it does not restore a second seat or create another interaction.
-Authenticated class and recommendation responses include only the requesting
-member's booking state. The UI uses that state to show `Book Now`, `Class Full`,
-or `Cancel Booking`, updates the affected class immediately, and refreshes
-recommendations after committed booking changes. A member's own full upcoming
-booked classes remain visible so an existing booking never loses its
-cancellation path; full unbooked classes are excluded from recommendations.
-Kafka event publishing remains available through the separate `/api/events`
-tracking flow; booking does not publish a second event.
+**Deduplication.** The pre-check (`ExistsByEventIdAsync`) is an optimization. The unique filtered index `IX_Interactions_EventId` is the actual concurrency boundary: a duplicate-key violation (SQL error 2601 or 2627) is caught and treated as "already processed." Cache invalidation runs on the duplicate path too, so a crash between insert and invalidation can recover on redelivery.
+
+**Retry classification.** The retry loop catches all exceptions except cancellation. There is no transient-versus-fatal classification. A sustained SQL Server outage will exhaust attempts and dead-letter messages exactly as a deterministic bug would. Retries are short by default (roughly 750ms total across three attempts), so they do not approach `MaxPollIntervalMs`.
+
+**DLQ contents.** `DeadLetterEvent` carries metadata only: `DeadLetterId`, `SchemaVersion`, `FailedAt`, source topic/partition/offset, message key, `EventId`, `Disposition`, and `Attempts`. **The original payload is not retained**, so the DLQ supports investigation but not replay. Dispositions currently emitted: `null-payload`, `malformed-json`, `unsupported-schema`, `invalid-event-id`, `invalid-contract`, `invalid-occurred-at`, `metadata-too-large`, `retries-exhausted`.
+
+**DLQ and offset commit are not atomic.** The dead-letter publish is awaited to its own broker acknowledgement, and only then does the loop commit the source offset. These are two separate operations. A crash between them causes the message to be redelivered on restart and dead-lettered a second time, so **the DLQ topic can contain duplicate records for one source message**. Consumers of the DLQ should be idempotent or deduplicate on source partition and offset. If the offset commit itself throws, the error is logged and the loop continues, which also results in redelivery.
+
+**Batch endpoint.** `POST /api/events/batch` accepts up to 100 events and publishes them sequentially, awaiting each. If publishing fails partway through, earlier events are already durable in Kafka but the response is a 500 with no partial-success detail. A caller retrying the whole batch without stable `EventId` values will duplicate the events that already succeeded.
+
+### 5. Class Booking
+```
+POST /api/classes/{classId}/book
+    → return the existing active booking for a duplicate retry
+    → check capacity
+    → in one database transaction:
+        create the active booking
+        increment Class.CurrentEnrollment
+        create one "Book" interaction
+    → after commit, invalidate rec:{userId}
+    → return booked | already-booked | full | conflict
+
+POST /api/classes/{classId}/cancel
+    → find only the authenticated user's active booking
+    → in one database transaction:
+        mark the booking cancelled
+        decrement Class.CurrentEnrollment once
+        create one "Cancel" interaction
+    → after commit, invalidate rec:{userId}
+    → return cancelled | already-cancelled | not-found | conflict
+```
+
+Clients may send an `Idempotency-Key` header (up to 100 characters). This header applies to **booking only**; `/api/events` does not read it. Database-enforced constraints (`FitLifeDbContext`):
+
+- `IX_Bookings_UserId_ClassId` unique, filtered on `Status = 'Active'`
+- `IX_Bookings_IdempotencyKey` unique, filtered on non-null
+- `CK_Bookings_Status` restricts status to `Active` or `Cancelled`
+- `CK_Classes_Enrollment_WithinCapacity` keeps enrollment in `[0, Capacity]`
+- `Class.RowVersion` provides optimistic concurrency
+
+Repeated cancellation is safe: it does not restore a second seat or create another interaction. Booking does not publish a Kafka event; `/api/events` is the only publishing path.
 
 ## Scalability & Performance
 
-### Horizontal Scaling
+### What scales today
 
-#### API Tier
-- **Stateless Design**: No in-memory session state
-- **Load Balancing**: Kubernetes service distributes requests
-- **Auto-scaling**: HPA based on CPU/memory (scale 2-10 pods)
-- **Database Connections**: Pool per instance (max 100)
+**API tier (Configured).** The API holds no in-memory session state, so it is stateless with respect to HTTP requests. Kubernetes manifests and an HPA (2–10 pods) exist in the repository.
 
-#### Worker Tier
-- **Kafka Consumer Groups**: Multiple consumers for parallelism
-- **Partition Strategy**: Events partitioned by userId (affinity)
-- **Batch Processing**: Process 1000 users per batch
-- **Idempotency**: A unique filtered SQL index on `Interactions.EventId`
-  prevents the same event from being stored twice
+**Event consumers (Implemented, bounded by partitions).** `EventConsumerService` joins the consumer group `fitlife-event-consumers`, so consumers can share partitions. Parallelism is capped by the partition count of `user-events`. Because the local stack relies on topic auto-creation at the broker default, that cap is currently one partition and therefore one effective consumer.
 
-### Caching Strategy
+### What does not scale today
 
-#### Redis Cache Structure
+`RecommendationGeneratorService` and `UserProfilerService` are scheduled workers with **no leader election and no distributed lease**. Running multiple API replicas would run these on every replica concurrently, duplicating work against the same rows. Before scaling the API horizontally, they must be disabled by configuration, coordinated, or extracted into separately scaled workers.
+
+**The Kubernetes and HPA assets are configuration evidence, not proof that the current worker topology is safe to scale.** They describe an intended deployment. They have not been run in a multi-replica cluster.
+
+### Redis keys (Implemented)
 ```
-Key Pattern                        TTL      Purpose
----------------------------------------------------------
-rec:{userId}                       10 min   User recommendations
-class:popular:{type}               1 hour   Popular classes by type
-user:session:{token}               24 hours User session data
-class:{classId}                    5 min    Class details
+Key Pattern            TTL      Purpose
+------------------------------------------------------
+rec:{userId}           10 min   User recommendations
 ```
 
-#### Cache Invalidation
-- **Time-based**: TTL expiration
-- **Event-based**: Invalidate on data change (class update)
-- **Manual**: Admin can force refresh
+Additional key patterns for popular-class and class-detail caching are **Planned**. There is no session key: JWTs are stateless.
 
-### Database Optimization
-
-#### Indexes
+### Database indexes (Implemented, from FitLifeDbContext)
 ```sql
--- High-cardinality lookups
-CREATE INDEX IX_Users_Email ON Users(Email);
-CREATE INDEX IX_Classes_StartTime ON Classes(StartTime);
+-- Users
+IX_Users_Email                      UNIQUE
 
--- Composite indexes for common queries
-CREATE INDEX IX_Interactions_UserId_Timestamp 
-  ON Interactions(UserId, Timestamp DESC);
+-- Classes
+IX_Classes_StartTime_Type_IsActive  FILTERED ON [IsActive] = 1
 
--- Filtered indexes for active classes
-CREATE INDEX IX_Classes_Active_Type 
-  ON Classes(Type) WHERE IsActive = 1;
+-- Interactions
+IX_Interactions_EventId             UNIQUE, FILTERED ON [EventId] IS NOT NULL
+IX_Interactions_UserId_Timestamp    (UserId ASC, Timestamp DESC)
+IX_Interactions_ItemId
+
+-- Bookings
+IX_Bookings_UserId_ClassId          UNIQUE, FILTERED ON [Status] = 'Active'
+IX_Bookings_IdempotencyKey          UNIQUE, FILTERED ON non-null
+IX_Bookings_ClassId_Status
+
+-- Recommendations
+PK (UserId, ItemId)
+IX_Recommendations_UserId_Rank      INCLUDE (Score, Reason)
 ```
 
-#### Query Optimization
-- **Projection**: Select only needed columns
-- **Pagination**: Use `OFFSET/FETCH` or keyset pagination
-- **Eager Loading**: Use `.Include()` to avoid N+1 queries
-- **Compiled Queries**: For frequently-executed queries
+`IX_Interactions_EventId` is the dedupe boundary described in [Data Flow §4](#4-event-tracking). It has no retention policy: `Interactions` grows without bound, so deduplication remains correct indefinitely but the index grows with total interaction history.
 
-### Performance Targets
+### Query patterns (Implemented)
+- `AsNoTracking()` on read paths
+- Candidate classes limited to 100 per generation pass
+- Projection to DTOs rather than returning entities
 
-| Metric                    | Target      |
-|---------------------------|-------------|
-| API P50 Latency           | < 100ms     |
-| API P95 Latency           | < 200ms     |
-| API P99 Latency           | < 500ms     |
-| Cache Hit Rate            | > 90%       |
-| Database Query Time       | < 50ms      |
-| Kafka Consumer Lag        | < 1 minute  |
-| Recommendation Generation | < 2 seconds |
+### Design targets (not measurements)
 
-These are design targets, not measured results — reaching them would require a load test against a live deployment (see `public-docs/Recommendations.md`'s Evaluation Metrics section, which already frames its metrics the same way).
+| Metric | Target |
+|---|---|
+| API P50 latency | < 100 ms |
+| API P95 latency | < 200 ms |
+| API P99 latency | < 500 ms |
+| Recommendation cache hit rate | > 90% |
+| Kafka consumer lag | < 1 minute |
+| Recommendation generation | < 2 seconds |
+
+None of these has been measured. Confirming them requires a load test against a deployed environment, which is out of scope for this case study. `Recommendations.md` frames its evaluation metrics the same way.
 
 ## Security Architecture
 
-### Authentication & Authorization
+### Implemented
 
-#### JWT Token Structure
-```json
-{
-  "sub": "user_123",
-  "email": "john@example.com",
-  "role": "Member",
-  "segment": "HighlyActive",
-  "iat": 1698700000,
-  "exp": 1698786400
-}
-```
+- **Authentication**: JWT bearer tokens issued at login and registration. `[Authorize]` on protected controllers.
+- **Ownership checks**: `/api/events` compares the token subject to `EventDto.UserId` and returns 403 on mismatch. Cancellation is scoped to the authenticated user's own booking.
+- **Response scoping**: authenticated class and recommendation responses include only the requesting member's booking state.
+- **Password storage**: BCrypt with per-password salt.
+- **Parameterized access**: EF Core throughout; no string-concatenated SQL.
+- **Input validation**: contract validation at the API boundary and again in the consumer, so a malformed event cannot reach the database from either path.
 
-#### Token Lifecycle
-1. User logs in → Generate token (24-hour expiration)
-2. Frontend stores in localStorage
-3. Axios interceptor adds to all requests: `Authorization: Bearer <token>`
-4. API middleware validates signature and expiration
-5. Extract claims for authorization decisions
+### Local development posture
 
-#### Authorization Rules
-- **Users**: Can only access their own data (userId match)
-- **Admins**: Can manage all users and classes
-- **Public**: Can view class catalog (no auth required)
+The Compose stack uses plaintext HTTP, `PLAINTEXT` Kafka listeners, and a hardcoded SA password. It is a development environment and is not hardened.
 
-### Data Security
+### Planned
 
-#### Password Storage
-- **Algorithm**: BCrypt with salt (cost factor 12)
-- **Never stored in plain text**
-- **Password requirements**: 8+ chars, upper/lower/digit/special
-
-#### SQL Injection Prevention
-- **Parameterized Queries**: Always use EF Core or Dapper with parameters
-- **Input Validation**: Validate all user inputs with Data Annotations
-- **Stored Procedures**: Used for complex queries
-
-#### Secrets Management
-- **Local Dev**: appsettings.Development.json (git-ignored)
-- **Production**: Azure Key Vault or Kubernetes Secrets
-- **Connection Strings**: Never hardcoded
-- **API Keys**: Rotated quarterly
-
-### Network Security
-
-#### HTTPS Everywhere
-- **TLS 1.3**: Minimum version
-- **Certificate**: Let's Encrypt or Azure-managed
-- **HSTS**: Enforce HTTPS
-
-#### CORS Configuration
-```csharp
-services.AddCors(options =>
-{
-    options.AddPolicy("AllowFrontend", builder =>
-    {
-        builder.WithOrigins("https://app.fitlife.com")
-               .AllowAnyMethod()
-               .AllowAnyHeader()
-               .AllowCredentials();
-    });
-});
-```
-
-#### Rate Limiting
-- **Per User**: 100 requests/minute
-- **Per IP**: 1000 requests/minute
-- **Implementation**: Nginx or middleware
+TLS termination and HSTS, secrets in Azure Key Vault or Kubernetes Secrets, rate limiting at the gateway, CORS restricted to a deployed origin, and key rotation. None of this is implemented in the current stack.
 
 ## Trade-offs & Decisions
 
-### 1. SQL vs NoSQL for User Data
+### 1. SQL Server for user, booking, and interaction data
 
-**Decision**: Azure SQL Database (SQL)
+**Decision**: SQL Server 2022 locally; a managed SQL service is the deployment target.
 
-**Reasoning**:
-- ✅ Strong consistency for user profiles and bookings
-- ✅ Rich querying (JOIN, complex filters)
-- ✅ ACID transactions for booking operations
-- ✅ Team expertise with SQL Server
-- ❌ Vertical scaling limits (mitigated with read replicas)
+- Strong consistency and ACID transactions, which booking needs to keep enrollment and booking rows in agreement
+- Unique filtered indexes give database-enforced idempotency for both bookings and event deduplication
+- Rich querying for scoring inputs
+- Vertical scaling limits; read replicas are Planned
 
-**Alternative Considered**: MongoDB for user profiles
-- ✅ Flexible schema for preferences
-- ❌ Weaker consistency guarantees
-- ❌ JOIN performance (aggregation pipeline)
+**Alternative considered**: MongoDB for user profiles. Flexible schema, but weaker consistency and no equivalent of the filtered unique constraints this design leans on.
 
-### 2. Kafka vs Azure Service Bus
+### 2. Kafka for event transport
 
-**Decision**: Apache Kafka (Azure Event Hubs)
+**Decision**: Apache Kafka, running as a single-broker container locally.
 
-**Reasoning**:
-- ✅ High throughput (millions of events/day)
-- ✅ Event replay capability
-- ✅ Partitioning for parallelism
-- ✅ Industry standard (interview relevance)
-- ❌ More complex to manage
+- Partitioning by `UserId` preserves per-user ordering
+- Consumer groups allow horizontal consumer scaling once topics have multiple partitions
+- Retained log supports replay of the source topic
+- Operationally heavier than a managed queue, and the local single-broker setup provides no replication
 
-**Alternative Considered**: Azure Service Bus
-- ✅ Fully managed, less ops overhead
-- ✅ Built-in dead-letter queue
-- ❌ Higher cost at scale
-- ❌ Lower throughput
+**Alternative considered**: Azure Service Bus. Lower operational overhead and a built-in dead-letter queue, which would have removed the hand-rolled DLQ path and its non-atomic commit seam described above. Rejected for partitioned ordering and replay. Azure Event Hubs is a possible managed target but is **not** the current runtime.
 
-### 3. Real-Time vs Batch Recommendations
+### 3. Batch recommendation generation
 
-**Decision**: Hybrid approach
+**Decision**: Hybrid. Batch generation every 10 minutes, Redis for reads, explicit invalidation on state changes.
 
-**Reasoning**:
-- ✅ Batch generation every 10 min (cost-effective)
-- ✅ Cache in Redis (fast reads)
-- ✅ Real-time events influence next batch
-- ✅ Balances freshness and performance
-- ❌ Not truly real-time (acceptable for MVP)
+- Amortizes scoring cost instead of paying it per request
+- Not real-time; a new interaction affects the next generation pass
+- Acceptable for a class catalog that changes slowly
 
-**Alternative Considered**: Fully real-time with ML model
-- ✅ Instant personalization
-- ❌ Much higher compute cost
-- ❌ Complex ML pipeline (overengineering for POC)
+**Alternative considered**: fully real-time ML scoring. Higher compute cost and pipeline complexity than this case study warrants.
 
-### 4. Monolith vs Microservices
+### 4. Monolith with worker-ready seams
 
-**Decision**: Monolithic API with microservice-ready patterns
+**Decision**: one deployable, with workers as `IHostedService`.
 
-**Reasoning**:
-- ✅ Simpler deployment for POC
-- ✅ Less network overhead
-- ✅ Easier debugging and testing
-- ✅ Can split into microservices later (clean architecture)
-- ❌ Coupled deployment (mitigated with CI/CD)
+- Simple local deployment and debugging
+- Coupled deployment, and the scheduled workers block horizontal scaling until they are extracted (see [Scalability & Performance](#scalability--performance))
 
-**Future Migration Path**:
-1. Extract RecommendationService → separate API
-2. Extract EventConsumer → separate worker service
-3. Use API Gateway for routing
+**Migration path**: extract `EventConsumerService` first, since it already coordinates through a consumer group. Then add leader election or extract the scheduled workers. Then split `RecommendationService` if warranted.
 
-### 5. Client-Side vs Server-Side Rendering
+### 5. Client-side SPA
 
-**Decision**: Client-side SPA (Vue.js)
+**Decision**: Vue.js SPA against the REST API.
 
-**Reasoning**:
-- ✅ Rich interactivity (filtering, real-time updates)
-- ✅ Decoupled frontend/backend deployment
-- ✅ Better developer experience
-- ✅ Mobile app reuses same API
-- ❌ Initial load time (mitigated with code splitting)
-- ❌ SEO challenges (mitigated with pre-rendering)
+- Decoupled deployment, reusable API for a future mobile client
+- Initial load cost and SEO limitations
 
 ## Monitoring & Observability
 
-### Structured Logging (Serilog)
-```csharp
-Log.Information("Recommendation generated for {UserId} with score {Score}", 
-    userId, score);
-```
+### Implemented
+- Structured logging via `ILogger` throughout the API and workers, including Kafka partition and offset on publish, dead-letter publication with disposition and attempt count, and duplicate-event detection on both the pre-check and constraint paths.
+- **Health checks**: `/health/live` (process liveness, no dependency checks), `/health/ready` (database and Redis), `/health` (alias for readiness).
 
-### Health Checks
-- **/health/live**: Process liveness without external dependency checks
-- **/health/ready**: Database and Redis readiness
-- **/health**: Compatibility alias for readiness
-
-### Metrics (Prometheus-compatible)
-- Request count by endpoint
-- Response time histograms
-- Cache hit/miss ratio
-- Kafka consumer lag
-- Background job duration
-
-### Distributed Tracing
-- **Correlation IDs**: Track request across services
-- **Azure Application Insights**: Full request timeline
-- **OpenTelemetry**: Industry-standard instrumentation
+### Planned
+Prometheus metrics, distributed tracing with correlation IDs across services, Application Insights, and OpenTelemetry instrumentation. Not wired up in the current stack.
 
 ## Future Enhancements
 
-1. **Machine Learning Recommendations**
-   - Replace rule-based scoring with collaborative filtering
-   - Train model on interaction history
-   - A/B test against current algorithm
-
-2. **Real-Time Notifications**
-   - SignalR for push notifications
-   - Notify when favorite instructor has new class
-   - Remind users of upcoming bookings
-
-3. **Mobile App**
-   - React Native or Flutter
-   - Reuse existing REST API
-   - Push notifications for personalization
-
-4. **Advanced Analytics**
-   - User cohort analysis
-   - Recommendation conversion funnel
-   - Instructor performance dashboard
-
-5. **Multi-Tenancy**
-   - Support multiple Life Time locations
-   - Location-specific recommendations
-   - Cross-location class discovery
+1. **Replicated Kafka** — multi-broker with `min.insync.replicas` ≥ 2 and explicitly created multi-partition topics, so `acks=all` means what the design assumes.
+2. **DLQ replay** — retain the original payload alongside the metadata record, and add a replay path.
+3. **Worker extraction** — leader election or separately scheduled deployments for the recommendation generator and profiler.
+4. **Machine learning recommendations** — collaborative filtering trained on interaction history, A/B tested against the rule-based scorer.
+5. **Real-time notifications** — SignalR push for favorite-instructor class announcements and booking reminders.
+6. **Multi-tenancy** — multiple locations with location-scoped recommendations.
 
 ---
 
-This architecture is designed to demonstrate senior-level system design thinking while remaining pragmatic for a proof-of-concept. All decisions prioritize **simplicity, scalability, and maintainability**.
+This architecture is a proof of concept. It is structured to make its own boundaries and failure modes legible rather than to claim production readiness.
