@@ -80,7 +80,14 @@ public class UserProfilerService : BackgroundService
                 _logger.LogError(ex, "Error in UserProfilerService batch");
                 
                 // Back off on errors
-                await Task.Delay(TimeSpan.FromMinutes(10), stoppingToken);
+                try
+                {
+                    await Task.Delay(TimeSpan.FromMinutes(10), stoppingToken);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
             }
         }
 
@@ -90,7 +97,7 @@ public class UserProfilerService : BackgroundService
     /// <summary>
     /// Processes all users and updates their segments based on interaction history
     /// </summary>
-    private async Task ProfileUsersBatchAsync(int lookbackDays, CancellationToken cancellationToken)
+    internal async Task ProfileUsersBatchAsync(int lookbackDays, CancellationToken cancellationToken)
     {
         using (var scope = _serviceProvider.CreateScope())
         {
@@ -125,6 +132,7 @@ public class UserProfilerService : BackgroundService
                         user.Segment = newSegment;
                         user.UpdatedAt = DateTime.UtcNow;
                         await userRepository.UpdateAsync(user);
+                        await userRepository.SaveChangesAsync();
 
                         _logger.LogInformation(
                             "Updated user {UserId} segment: {OldSegment} → {NewSegment}",

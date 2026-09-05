@@ -157,6 +157,58 @@ public class EventConsumerServiceTests
         deadLetterPublisher.Published.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task WorkerLoop_DeadLetterFailureStopsBeforePollingOrCommittingLaterRecords()
+    {
+        await using var provider = BuildProvider(new Mock<IInteractionRepository>().Object,
+            new FailingDeadLetterPublisher());
+        var consumer = new Mock<IConsumer<string, string>>();
+        consumer.Setup(c => c.Consume(It.IsAny<TimeSpan>())).Returns(ConsumeResultFor("{not-json"));
+        using var service = CreateLoopService(provider, consumer.Object);
+        await service.StartAsync(CancellationToken.None);
+        var execute = () => service.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(10));
+        await execute.Should().ThrowAsync<InvalidOperationException>().WithMessage("dead-letter unavailable");
+        consumer.Verify(c => c.Consume(It.IsAny<TimeSpan>()), Times.Once);
+        consumer.Verify(c => c.Commit(It.IsAny<ConsumeResult<string, string>>()), Times.Never);
+        consumer.Verify(c => c.Close(), Times.Once);
+        consumer.Verify(c => c.Dispose(), Times.Once);
+    }
+
+    [Fact]
+    public async Task WorkerLoop_StopWaitsForInFlightProcessingThenClosesConsumer()
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var repository = new Mock<IInteractionRepository>();
+        repository.Setup(r => r.ExistsByEventIdAsync(It.IsAny<string>()))
+            .Returns(async () => { entered.SetResult(); await release.Task; return true; });
+        await using var provider = BuildProvider(repository.Object, new RecordingDeadLetterPublisher());
+        var consumer = new Mock<IConsumer<string, string>>();
+        consumer.Setup(c => c.Consume(It.IsAny<TimeSpan>()))
+            .Returns(ConsumeResultFor(JsonSerializer.Serialize(ValidEvent())));
+        using var service = CreateLoopService(provider, consumer.Object);
+        await service.StartAsync(CancellationToken.None);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        var stop = service.StopAsync(CancellationToken.None);
+        consumer.Verify(c => c.Close(), Times.Never);
+        release.SetResult();
+        await stop.WaitAsync(TimeSpan.FromSeconds(10));
+        consumer.Verify(c => c.Commit(It.IsAny<ConsumeResult<string, string>>()), Times.Once);
+        consumer.Verify(c => c.Consume(It.IsAny<TimeSpan>()), Times.Once);
+        consumer.Verify(c => c.Close(), Times.Once);
+        consumer.Verify(c => c.Dispose(), Times.Once);
+        service.ExecuteTask!.IsCompletedSuccessfully.Should().BeTrue();
+    }
+
+    private static EventConsumerService CreateLoopService(IServiceProvider provider,
+        IConsumer<string, string> consumer) => new(
+            NullLogger<EventConsumerService>.Instance,
+            new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Kafka:BootstrapServers"] = "unused:9092",
+                ["BackgroundWorkers:EventConsumer:RetryDelayMilliseconds"] = "0"
+            }).Build(), provider, consumer);
+
     [SqlServerFact]
     public async Task ConcurrentDuplicateDelivery_DoesNotThrowAndStoresExactlyOneInteraction()
     {

@@ -1,15 +1,9 @@
-using FitLife.Api.BackgroundServices;
 using FitLife.Api.Configuration;
 using FitLife.Api.Health;
 using FitLife.Core.Interfaces;
-using FitLife.Core.Services;
 using FitLife.Core.Auth;
 using FitLife.Infrastructure.Auth;
-using FitLife.Infrastructure.Cache;
 using FitLife.Infrastructure.Data;
-using FitLife.Infrastructure.Kafka;
-using FitLife.Infrastructure.Repositories;
-using FitLife.Infrastructure.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -21,7 +15,25 @@ using AspNetCoreRateLimit;
 
 var builder = WebApplication.CreateBuilder(args);
 
-ProductionConfigurationValidator.Validate(builder.Configuration, builder.Environment);
+var processRole = ProcessTopology.ReadRole(builder.Configuration);
+ProductionConfigurationValidator.Validate(builder.Configuration, builder.Environment, processRole);
+ProcessTopology.Validate(builder.Configuration, processRole);
+
+if (processRole != ProcessRole.Api)
+{
+    if (args.Contains("--seed"))
+        throw new InvalidOperationException("Seeding must run in the Api role.");
+
+    // A generic host starts no HTTP listener and never runs API migrations/seeding.
+    var workerBuilder = WorkerApplication.CreateBuilder(
+        builder.Configuration, builder.Environment, processRole);
+    using var workerHost = workerBuilder.Build();
+    var workers = workerHost.Services.GetServices<IHostedService>().OfType<BackgroundService>().ToArray();
+    await workerHost.RunAsync();
+    if (workers.Any(worker => worker.ExecuteTask?.IsFaulted == true))
+        Environment.ExitCode = 1;
+    return;
+}
 
 // Add services to the container.
 builder.Services.AddControllers();
@@ -68,52 +80,12 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-// Configure Entity Framework Core with SQL Server
-// Skip registration in Testing environment — tests register InMemory provider instead
-if (!builder.Environment.IsEnvironment("Testing"))
-{
-    builder.Services.AddDbContext<FitLifeDbContext>(options =>
-        options.UseSqlServer(
-            builder.Configuration.GetConnectionString("DefaultConnection"),
-            sqlOptions => sqlOptions.EnableRetryOnFailure(
-                maxRetryCount: 3,
-                maxRetryDelay: TimeSpan.FromSeconds(5),
-                errorNumbersToAdd: null
-            )
-        )
-    );
-}
-
-// Register repositories
-builder.Services.AddScoped<IUserRepository, UserRepository>();
-builder.Services.AddScoped<IClassRepository, ClassRepository>();
-builder.Services.AddScoped<IInteractionRepository, InteractionRepository>();
-builder.Services.AddScoped<IRecommendationRepository, RecommendationRepository>();
-builder.Services.AddScoped<IBookingService, BookingService>();
-
-// Register core services
-builder.Services.AddScoped<IScoringEngine, ScoringEngine>();
-builder.Services.AddScoped<IRecommendationService, RecommendationService>();
-
-// Register Kafka producer (singleton - connection pooling)
-builder.Services.AddSingleton<KafkaProducer>();
-builder.Services.AddSingleton<IEventPublisher>(sp =>
-    sp.GetRequiredService<KafkaProducer>());
-builder.Services.AddSingleton<IDeadLetterPublisher>(sp =>
-    sp.GetRequiredService<KafkaProducer>());
-
-// Register Redis cache service (singleton - connection pooling)
-builder.Services.AddSingleton<RedisCacheService>();
-builder.Services.AddSingleton<ICacheService>(sp => sp.GetRequiredService<RedisCacheService>());
-builder.Services.AddSingleton<IRedisHealthProbe>(sp => sp.GetRequiredService<RedisCacheService>());
+builder.Services.AddFitLifeRuntime(builder.Configuration, builder.Environment, processRole);
 
 // Register JWT service
 builder.Services.AddSingleton<IJwtService, JwtService>();
 
-// Register background workers
-builder.Services.AddHostedService<EventConsumerService>();
-builder.Services.AddHostedService<RecommendationGeneratorService>();
-builder.Services.AddHostedService<UserProfilerService>();
+// The API role deliberately registers no background workers.
 
 // Configure JWT Authentication
 var jwtSecret = builder.Configuration["Jwt:Secret"] ?? throw new InvalidOperationException("JWT Secret not configured");
@@ -305,26 +277,7 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
 
 app.MapControllers();
 
-// Graceful shutdown: Flush Kafka producer
-// Capture references BEFORE app.Run() to avoid ObjectDisposedException in the callback
-var kafkaProducerForShutdown = app.Services.GetRequiredService<KafkaProducer>();
-var shutdownLogger = app.Services.GetRequiredService<ILogger<Program>>();
-var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
-lifetime.ApplicationStopping.Register(() =>
-{
-    shutdownLogger.LogInformation("Application shutting down - flushing Kafka producer");
-    
-    try
-    {
-        kafkaProducerForShutdown.Flush(TimeSpan.FromSeconds(30));
-        shutdownLogger.LogInformation("Kafka producer flushed successfully");
-    }
-    catch (Exception ex)
-    {
-        shutdownLogger.LogError(ex, "Error flushing Kafka producer during shutdown");
-    }
-});
-
+// DI disposes and flushes an instantiated Kafka producer after hosted work stops.
 app.Run();
 
 // Make Program class accessible for WebApplicationFactory in integration tests

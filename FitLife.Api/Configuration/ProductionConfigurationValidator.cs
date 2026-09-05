@@ -8,7 +8,7 @@ public static class ProductionConfigurationValidator
     private const string DemoJwtSecret =
         "your-256-bit-secret-key-here-change-in-production-minimum-32-characters";
 
-    public static void Validate(IConfiguration configuration, IHostEnvironment environment)
+    public static void Validate(IConfiguration configuration, IHostEnvironment environment, ProcessRole role = ProcessRole.Api)
     {
         if (!environment.IsProduction())
         {
@@ -21,9 +21,9 @@ public static class ProductionConfigurationValidator
         var redisConnection = configuration["Redis:ConnectionString"];
         var kafkaBootstrapServers = configuration["Kafka:BootstrapServers"];
 
-        if (string.IsNullOrWhiteSpace(jwtSecret)
+        if (role == ProcessRole.Api && (string.IsNullOrWhiteSpace(jwtSecret)
             || jwtSecret.Length < 32
-            || string.Equals(jwtSecret, DemoJwtSecret, StringComparison.Ordinal))
+            || string.Equals(jwtSecret, DemoJwtSecret, StringComparison.Ordinal)))
         {
             invalidKeys.Add("Jwt:Secret");
         }
@@ -41,7 +41,7 @@ public static class ProductionConfigurationValidator
             invalidKeys.Add("Redis:ConnectionString");
         }
 
-        if (IsMissingOrLocal(kafkaBootstrapServers))
+        if (role != ProcessRole.Scheduler && IsMissingOrLocal(kafkaBootstrapServers))
         {
             invalidKeys.Add("Kafka:BootstrapServers");
         }

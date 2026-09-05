@@ -32,6 +32,15 @@ public class EventConsumerService : BackgroundService
         _serviceProvider = serviceProvider;
     }
 
+    internal EventConsumerService(
+        ILogger<EventConsumerService> logger,
+        IConfiguration configuration,
+        IServiceProvider serviceProvider,
+        IConsumer<string, string> consumer) : this(logger, configuration, serviceProvider)
+    {
+        _consumer = consumer;
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         // Check if worker is enabled
@@ -43,7 +52,7 @@ public class EventConsumerService : BackgroundService
         }
 
         // Kafka's Consume API is synchronous. Yield once so BackgroundService
-        // startup cannot block the HTTP host when the broker is unavailable.
+        // startup cannot block the worker host when the broker is unavailable.
         await Task.Yield();
 
         var bootstrapServers = _configuration["Kafka:BootstrapServers"]
@@ -63,7 +72,7 @@ public class EventConsumerService : BackgroundService
             EnablePartitionEof = false
         };
 
-        _consumer = new ConsumerBuilder<string, string>(config)
+        _consumer ??= new ConsumerBuilder<string, string>(config)
             .SetErrorHandler((_, e) => _logger.LogError("Kafka consumer error: {Reason}", e.Reason))
             .SetPartitionsAssignedHandler((c, partitions) =>
             {
@@ -72,51 +81,76 @@ public class EventConsumerService : BackgroundService
             })
             .Build();
 
-        _consumer.Subscribe(topic);
-
-        _logger.LogInformation(
-            "EventConsumerService started - Consuming from topic '{Topic}' with group '{GroupId}'",
-            topic, groupId);
-
-        var batchSize = _configuration.GetValue<int>("BackgroundWorkers:EventConsumer:BatchSize", 100);
-        var pollIntervalMs = _configuration.GetValue<int>("BackgroundWorkers:EventConsumer:PollIntervalMs", 1000);
-
-        while (!stoppingToken.IsCancellationRequested)
+        try
         {
-            try
+            _consumer.Subscribe(topic);
+
+            _logger.LogInformation(
+                "EventConsumerService started - Consuming from topic '{Topic}' with group '{GroupId}'",
+                topic, groupId);
+
+            var pollIntervalMs = _configuration.GetValue<int>("BackgroundWorkers:EventConsumer:PollIntervalMs", 1000);
+
+            while (!stoppingToken.IsCancellationRequested)
             {
-                var consumeResult = _consumer.Consume(TimeSpan.FromMilliseconds(pollIntervalMs));
-
-                if (consumeResult != null)
+                try
                 {
-                    await ProcessWithRetryAsync(consumeResult, stoppingToken);
+                    var consumeResult = _consumer.Consume(TimeSpan.FromMilliseconds(pollIntervalMs));
 
-                    // Manual commit after successful processing
-                    try
+                    if (consumeResult != null)
                     {
-                        _consumer.Commit(consumeResult);
-                    }
-                    catch (KafkaException ex)
-                    {
-                        _logger.LogError(ex, "Failed to commit offset for message at {Partition}:{Offset}",
-                            consumeResult.Partition.Value, consumeResult.Offset.Value);
+                        await ProcessWithRetryAsync(consumeResult, stoppingToken);
+
+                        // Manual commit after successful processing
+                        try
+                        {
+                            _consumer.Commit(consumeResult);
+                        }
+                        catch (KafkaException ex)
+                        {
+                            _logger.LogError(ex, "Failed to commit offset for message at {Partition}:{Offset}",
+                                consumeResult.Partition.Value, consumeResult.Offset.Value);
+                        }
                     }
                 }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    _logger.LogInformation("EventConsumerService is shutting down");
+                    break;
+                }
+                catch (ConsumeException ex)
+                {
+                    _logger.LogError(ex, "Error consuming message: {Error}", ex.Error.Reason);
+                    try
+                    {
+                        await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
+                    }
+                    catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                    {
+                        break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Processing already exhausted bounded retries. Continuing to poll
+                    // could commit a later offset past this unacknowledged record.
+                    _logger.LogError(ex, "Stopping consumer with an unacknowledged record");
+                    throw;
+                }
             }
-            catch (OperationCanceledException)
+        }
+        finally
+        {
+            // Close only after consumption/processing has exited, never concurrently
+            // from Dispose while the Kafka client is still in use.
+            try
             {
-                _logger.LogInformation("EventConsumerService is shutting down");
-                break;
+                _consumer.Close();
             }
-            catch (ConsumeException ex)
+            finally
             {
-                _logger.LogError(ex, "Error consuming message: {Error}", ex.Error.Reason);
-                await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken); // Back off on errors
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Unexpected error in EventConsumerService");
-                await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken); // Back off on errors
+                _consumer.Dispose();
+                _consumer = null;
             }
         }
 
@@ -379,22 +413,6 @@ public class EventConsumerService : BackgroundService
     private static bool IsDuplicateEventId(DbUpdateException ex) =>
         ex.InnerException is SqlException sqlException
         && (sqlException.Number == 2601 || sqlException.Number == 2627);
-
-    public override void Dispose()
-    {
-        try
-        {
-            _consumer?.Close();
-            _consumer?.Dispose();
-            _logger.LogInformation("EventConsumerService disposed gracefully");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error disposing EventConsumerService");
-        }
-
-        base.Dispose();
-    }
 }
 
 internal sealed record EventProcessingOutcome(

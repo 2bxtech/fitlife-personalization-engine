@@ -75,13 +75,20 @@ The ordering narrows the gap but does not close it. **The dead-letter publish an
 
 `EnableAutoCommit = false`. Auto-commit advances offsets on a timer regardless of processing progress, which can commit past a message that was never stored — silent loss. Manual commit after processing or dead-letter handling makes redelivery the failure mode instead, which the `EventId` unique index already absorbs.
 
-If the commit itself throws, the error is logged and the loop continues. The message is redelivered and deduplicated on the next pass.
+If the commit itself throws, the error is logged and the loop continues. Redelivery may occur after restart or reassignment, and is deduplicated; a later successful commit can also advance past already processed records. If processing and dead-letter publication fail, the worker stops before polling another record, preventing a later commit from skipping an unacknowledged record.
 
-### Why `IHostedService` for background workers instead of separate services?
+### Why one image with separate process roles?
 
-For a single-instance demo, co-locating workers with the API simplifies local deployment and monitoring. Each API process starts an event consumer, a recommendation generator, and a user profiler.
+The HTTP API, Kafka consumer, and scheduled workers share libraries but run as
+separate processes. `Process:Role` selects Api (default), Consumer, or Scheduler;
+incompatible worker flags fail startup. Worker hosts run no HTTP listener,
+migrations, or seeding.
 
-The event consumers can share work through a Kafka consumer group, bounded by the partition count of `user-events` — currently one partition, since the local stack relies on topic auto-creation. The scheduled generator and profiler have **no leader election and no distributed lease**. They must be disabled, coordinated, or extracted into separately scaled workers before running multiple API replicas. The Kubernetes manifests are configured architecture assets, not evidence that the current worker topology is safe at horizontal scale.
+Consumers coordinate through the Kafka consumer group, bounded by topic partitions.
+The scheduler is configured as one Compose container or one Kubernetes replica
+with `Recreate` and no HPA. API scaling cannot multiply scheduled work. There is
+no distributed lease: a second scheduler against the same database is unsupported.
+See [Worker Topology](Worker-Topology.md) for the precise ownership boundary.
 
 ### Why validate `EventType` against a static class instead of accepting any string?
 

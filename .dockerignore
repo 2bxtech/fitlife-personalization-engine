@@ -1,0 +1,19 @@
+# Allow only the .NET build inputs; keep private/local workspace data out.
+**
+!FitLife.sln
+!FitLife.Api/
+!FitLife.Api/**
+!FitLife.Core/
+!FitLife.Core/**
+!FitLife.Infrastructure/
+!FitLife.Infrastructure/**
+!FitLife.Tests/
+!FitLife.Tests/FitLife.Tests.csproj
+**/bin/**
+**/obj/**
+**/.vs/**
+**/.env*
+**/*.user
+**/*.suo
+**/secrets.json
+**/appsettings.*.local.json

@@ -96,6 +96,7 @@ services:
     ports:
       - "5269:8080"
     environment:
+      - Process__Role=Api
       - ASPNETCORE_ENVIRONMENT=Development
       - ConnectionStrings__DefaultConnection=Server=sqlserver,1433;Database=FitLifeDb;User Id=sa;Password=YourStrong@Passw0rd;TrustServerCertificate=True;
       - Redis__ConnectionString=redis:6379
@@ -108,6 +109,50 @@ services:
       timeout: 3s
       retries: 3
       start_period: 40s
+
+  # Independently owned Kafka partitions; no scheduled work in this process.
+  consumer:
+    restart: on-failure
+    build:
+      context: .
+      dockerfile: FitLife.Api/Dockerfile
+    depends_on:
+      api:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      - Process__Role=Consumer
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Server=sqlserver,1433;Database=FitLifeDb;User Id=sa;Password=YourStrong@Passw0rd;TrustServerCertificate=True;
+      - Redis__ConnectionString=redis:6379
+      - Kafka__BootstrapServers=kafka:9093
+    stop_grace_period: 90s
+    healthcheck:
+      disable: true  # Generic worker host has no HTTP listener.
+    networks:
+      - fitlife-network
+
+  # Explicit singleton: container_name prevents Compose --scale scheduler=N.
+  scheduler:
+    restart: on-failure
+    build:
+      context: .
+      dockerfile: FitLife.Api/Dockerfile
+    container_name: fitlife-scheduler
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      - Process__Role=Scheduler
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Server=sqlserver,1433;Database=FitLifeDb;User Id=sa;Password=YourStrong@Passw0rd;TrustServerCertificate=True;
+      - Redis__ConnectionString=redis:6379
+    stop_grace_period: 90s
+    healthcheck:
+      disable: true
+    networks:
+      - fitlife-network
 
   # FitLife Web Frontend
   web:
