@@ -1,0 +1,104 @@
+# Configured only. Apply after the database schema is initialized.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fitlife-consumer
+  namespace: fitlife
+  labels:
+    app: fitlife-consumer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fitlife-consumer
+  template:
+    metadata:
+      labels:
+        app: fitlife-consumer
+    spec:
+      terminationGracePeriodSeconds: 90
+      containers:
+      - name: consumer
+        image: <ACR_REGISTRY>/fitlife-api:latest
+        imagePullPolicy: Always
+        env:
+        - name: Process__Role
+          value: Consumer
+        - name: ASPNETCORE_ENVIRONMENT
+          valueFrom:
+            configMapKeyRef:
+              name: fitlife-config
+              key: ASPNETCORE_ENVIRONMENT
+        - name: ConnectionStrings__DefaultConnection
+          valueFrom:
+            secretKeyRef:
+              name: fitlife-secrets
+              key: SQL_CONNECTION_STRING
+        - name: Redis__ConnectionString
+          valueFrom:
+            configMapKeyRef:
+              name: fitlife-config
+              key: REDIS_CONNECTION_STRING
+        - name: Kafka__BootstrapServers
+          valueFrom:
+            configMapKeyRef:
+              name: fitlife-config
+              key: KAFKA_BOOTSTRAP_SERVERS
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+---
+# Never attach an HPA or increase replicas for the scheduled owner.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fitlife-scheduler
+  namespace: fitlife
+  labels:
+    app: fitlife-scheduler
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate  # Stop the old singleton before starting its replacement.
+  selector:
+    matchLabels:
+      app: fitlife-scheduler
+  template:
+    metadata:
+      labels:
+        app: fitlife-scheduler
+    spec:
+      terminationGracePeriodSeconds: 90
+      containers:
+      - name: scheduler
+        image: <ACR_REGISTRY>/fitlife-api:latest
+        imagePullPolicy: Always
+        env:
+        - name: Process__Role
+          value: Scheduler
+        - name: ASPNETCORE_ENVIRONMENT
+          valueFrom:
+            configMapKeyRef:
+              name: fitlife-config
+              key: ASPNETCORE_ENVIRONMENT
+        - name: ConnectionStrings__DefaultConnection
+          valueFrom:
+            secretKeyRef:
+              name: fitlife-secrets
+              key: SQL_CONNECTION_STRING
+        - name: Redis__ConnectionString
+          valueFrom:
+            configMapKeyRef:
+              name: fitlife-config
+              key: REDIS_CONNECTION_STRING
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"

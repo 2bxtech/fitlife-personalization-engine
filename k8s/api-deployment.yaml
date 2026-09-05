@@ -23,6 +23,8 @@ spec:
         - containerPort: 8080
           protocol: TCP
         env:
+        - name: Process__Role
+          value: Api
         - name: ASPNETCORE_ENVIRONMENT
           valueFrom:
             configMapKeyRef:

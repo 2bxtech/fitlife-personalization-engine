@@ -50,7 +50,7 @@ if (-not $skipContainerSetup) {
     Write-Host ""
     Write-Host "Step 2: Starting infrastructure (SQL, Redis, Kafka)..." -ForegroundColor Yellow
     Write-Host "  (This may take 30-60 seconds on first run)" -ForegroundColor Gray
-    docker-compose up -d 2>&1 | ForEach-Object { Write-Host "." -NoNewline -ForegroundColor Cyan }
+    docker-compose up -d sqlserver redis zookeeper kafka 2>&1 | ForEach-Object { Write-Host "." -NoNewline -ForegroundColor Cyan }
     Write-Host ""
     Write-Host "Containers started" -ForegroundColor Green
 }

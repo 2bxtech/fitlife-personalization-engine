@@ -23,46 +23,33 @@ Nothing here has been load-tested. No latency, throughput, or availability figur
 
 ## System Overview
 
-FitLife is a monolithic .NET 8 API with event-driven ingestion and co-located background workers. It is structured so that workers can be extracted into separate services later, but it does not currently run as microservices.
+FitLife shares a .NET 8 codebase and image across separate HTTP API, Kafka consumer, and singleton scheduler processes. Process responsibilities are isolated; this is not a claim of independently versioned microservices.
 
 ### Local runtime (Implemented)
 
-This is what `docker-compose.yml` actually starts:
+The Compose configuration assigns separate process roles (configured, not a live deployment claim):
 
+```mermaid
+flowchart LR
+    WEB[Vue SPA :3000] --> API[HTTP API :5269]
+    API --> SQL[(SQL Server)]
+    API --> REDIS[(Redis)]
+    API --> KAFKA[Kafka / user-events]
+    KAFKA --> CONSUMER[Consumer process]
+    CONSUMER --> SQL
+    CONSUMER --> REDIS
+    CONSUMER --> DLQ[user-events-dlq]
+    SCHEDULER[Singleton scheduler] --> SQL
+    SCHEDULER --> REDIS
 ```
-┌──────────────────────────────────────────────────────────┐
-│  Vue.js 3 SPA                              :3000         │
-│  - Pinia state, Vue Router, Axios                        │
-└───────────────────────────┬──────────────────────────────┘
-                            │ HTTP (plaintext, local dev)
-                            ▼
-┌──────────────────────────────────────────────────────────┐
-│  FitLife.Api (single container)            :5269→8080    │
-│  ├─ Controllers (Events, Classes, Recommendations, …)    │
-│  └─ Co-located IHostedService workers:                   │
-│       EventConsumerService                               │
-│       RecommendationGeneratorService                     │
-│       UserProfilerService                                │
-└──────┬──────────────────┬────────────────────┬───────────┘
-       │                  │                    │
-       ▼                  ▼                    ▼
-┌─────────────┐   ┌────────────────┐   ┌──────────────────┐
-│ Redis 7     │   │ Kafka 7.5.0    │   │ SQL Server 2022  │
-│ :6380→6379  │   │ (single broker,│   │ :1433            │
-│             │   │  ZooKeeper)    │   │                  │
-│ rec:{userId}│   │ user-events    │   │ Users            │
-│             │   │ user-events-dlq│   │ Classes          │
-│             │   │                │   │ Interactions     │
-│             │   │ RF=1           │   │ Recommendations  │
-│             │   │ auto-create on │   │ Bookings         │
-└─────────────┘   └────────────────┘   └──────────────────┘
-```
+
+See [Worker Topology](Worker-Topology.md) for role configuration and singleton limitations.
 
 **One broker, replication factor 1.** `KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1` and a single `kafka` service mean there is no replication locally. Topics are auto-created (`KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"`) at the broker default partition count, so `user-events` is single-partition unless created explicitly. Both facts constrain the guarantees described below.
 
 ### Deployment target (Planned)
 
-Kubernetes with a managed SQL and a replicated Kafka cluster. Manifests exist in the repository; see [Scalability & Performance](#scalability--performance) for why they are not evidence that the current worker topology scales.
+The portfolio target is Azure Container Apps with Azure SQL and explicitly budgeted optional dependencies. Kubernetes manifests remain configured architecture evidence, not a deployed AKS environment.
 
 ## Architecture Principles
 
@@ -143,9 +130,9 @@ From `KafkaProducer`:
 
 **Producer idempotence is not end-to-end idempotency.** It suppresses duplicates caused by producer retries within a producer session and partition. It does nothing about a client that retries an HTTP request, and nothing about a consumer that reprocesses a message after a rebalance. Those are handled separately, below.
 
-### 3. Background Workers (Implemented, co-located)
+### 3. Background Workers (Verified process separation)
 
-All three run as `IHostedService` inside the API process.
+The Consumer role hosts `EventConsumerService`. The Scheduler role hosts the generator and profiler. The Api role hosts none of these workers. Generic worker hosts expose no HTTP routes.
 
 #### EventConsumerService
 - **Consumes**: `user-events`, group `fitlife-event-consumers`
@@ -256,7 +243,7 @@ commit source offset          ← separate, non-transactional step
 
 **DLQ contents.** `DeadLetterEvent` carries metadata only: `DeadLetterId`, `SchemaVersion`, `FailedAt`, source topic/partition/offset, message key, `EventId`, `Disposition`, and `Attempts`. **The original payload is not retained**, so the DLQ supports investigation but not replay. Dispositions currently emitted: `null-payload`, `malformed-json`, `unsupported-schema`, `invalid-event-id`, `invalid-contract`, `invalid-occurred-at`, `metadata-too-large`, `retries-exhausted`.
 
-**DLQ and offset commit are not atomic.** The dead-letter publish is awaited to its own broker acknowledgement, and only then does the loop commit the source offset. These are two separate operations. A crash between them causes the message to be redelivered on restart and dead-lettered a second time, so **the DLQ topic can contain duplicate records for one source message**. Consumers of the DLQ should be idempotent or deduplicate on source partition and offset. If the offset commit itself throws, the error is logged and the loop continues, which also results in redelivery.
+**DLQ and offset commit are not atomic.** The dead-letter publish is awaited to its own broker acknowledgement, and only then does the loop commit the source offset. These are two separate operations. A crash between them causes the message to be redelivered on restart and dead-lettered a second time, so **the DLQ topic can contain duplicate records for one source message**. Consumers of the DLQ should be idempotent or deduplicate on source partition and offset. If the offset commit itself throws, the error is logged and the loop continues; redelivery is possible after restart/reassignment but is not guaranteed on the next poll. If processing and DLQ publication fail, the consumer stops before polling another record so a later commit cannot skip that record.
 
 **Batch endpoint.** `POST /api/events/batch` accepts up to 100 events and publishes them sequentially, awaiting each. If publishing fails partway through, earlier events are already durable in Kafka but the response is a 500 with no partial-success detail. A caller retrying the whole batch without stable `EventId` values will duplicate the events that already succeeded.
 
@@ -296,13 +283,13 @@ Repeated cancellation is safe: it does not restore a second seat or create anoth
 
 ### What scales today
 
-**API tier (Configured).** The API holds no in-memory session state, so it is stateless with respect to HTTP requests. Kubernetes manifests and an HPA (2–10 pods) exist in the repository.
+**API tier (Configured).** The API holds no in-memory session state, so it is stateless with respect to HTTP requests. Kubernetes manifests and an API HPA (3–10 pods) exist in the repository.
 
 **Event consumers (Implemented, bounded by partitions).** `EventConsumerService` joins the consumer group `fitlife-event-consumers`, so consumers can share partitions. Parallelism is capped by the partition count of `user-events`. Because the local stack relies on topic auto-creation at the broker default, that cap is currently one partition and therefore one effective consumer.
 
 ### What does not scale today
 
-`RecommendationGeneratorService` and `UserProfilerService` are scheduled workers with **no leader election and no distributed lease**. Running multiple API replicas would run these on every replica concurrently, duplicating work against the same rows. Before scaling the API horizontally, they must be disabled by configuration, coordinated, or extracted into separately scaled workers.
+`RecommendationGeneratorService` and `UserProfilerService` belong exclusively to the Scheduler role. Compose constrains that service to one named container; Kubernetes configures one replica with `Recreate` and no HPA. There is **no distributed lease or fencing**: do not start another scheduler against the same database. API and consumer replicas do not multiply scheduled work.
 
 **The Kubernetes and HPA assets are configuration evidence, not proof that the current worker topology is safe to scale.** They describe an intended deployment. They have not been run in a multi-replica cluster.
 
@@ -411,14 +398,14 @@ TLS termination and HSTS, secrets in Azure Key Vault or Kubernetes Secrets, rate
 
 **Alternative considered**: fully real-time ML scoring. Higher compute cost and pipeline complexity than this case study warrants.
 
-### 4. Monolith with worker-ready seams
+### 4. Shared image, separate process roles
 
-**Decision**: one deployable, with workers as `IHostedService`.
+**Decision**: reuse one executable/image with explicit Api, Consumer, and Scheduler roles.
 
-- Simple local deployment and debugging
-- Coupled deployment, and the scheduled workers block horizontal scaling until they are extracted (see [Scalability & Performance](#scalability--performance))
-
-**Migration path**: extract `EventConsumerService` first, since it already coordinates through a consumer group. Then add leader election or extract the scheduled workers. Then split `RecommendationService` if warranted.
+- Share repositories and personalization logic without duplicating service wiring.
+- Scale HTTP and partition-owned ingestion independently of scheduled work.
+- Keep one scheduled owner using deployment constraints; distributed ownership is not implemented.
+- Reject incompatible worker enable flags at startup.
 
 ### 5. Client-side SPA
 
@@ -440,7 +427,7 @@ Prometheus metrics, distributed tracing with correlation IDs across services, Ap
 
 1. **Replicated Kafka** — multi-broker with `min.insync.replicas` ≥ 2 and explicitly created multi-partition topics, so `acks=all` means what the design assumes.
 2. **DLQ replay** — retain the original payload alongside the metadata record, and add a replay path.
-3. **Worker extraction** — leader election or separately scheduled deployments for the recommendation generator and profiler.
+3. **Worker operations** — operational counters, live rollout/shutdown evidence, and distributed ownership if scheduler redundancy becomes required.
 4. **Machine learning recommendations** — collaborative filtering trained on interaction history, A/B tested against the rule-based scorer.
 5. **Real-time notifications** — SignalR push for favorite-instructor class announcements and booking reminders.
 6. **Multi-tenancy** — multiple locations with location-scoped recommendations.

@@ -34,15 +34,6 @@ public class FitLifeWebApplicationFactory : WebApplicationFactory<Program>
         
         builder.ConfigureServices(services =>
         {
-            // Remove hosted services (background workers) to avoid interference during tests
-            var hostedServices = services
-                .Where(d => d.ServiceType == typeof(IHostedService))
-                .ToList();
-            foreach (var descriptor in hostedServices)
-            {
-                services.Remove(descriptor);
-            }
-
             // Register InMemory database for testing
             // SQL Server is not registered because Program.cs checks for Testing environment
             services.AddDbContext<FitLifeDbContext>(options =>

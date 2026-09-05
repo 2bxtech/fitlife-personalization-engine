@@ -536,8 +536,10 @@ dotnet run --seed
 
 ### Recommendations Not Showing
 ```powershell
-# Check background workers are running
-# View API logs for "RecommendationGeneratorService started"
+# On-demand recommendations work in the API; scheduled refresh is optional.
+# If using scheduled refresh, check its separate process is running.
+# View scheduler process logs for "RecommendationGeneratorService started"
+# See public-docs/Worker-Topology.md for separate worker startup commands.
 
 # Manually trigger recommendation generation
 Invoke-RestMethod -Uri "http://localhost:5269/api/recommendations/user_001/refresh" -Headers @{Authorization="Bearer <token>"}

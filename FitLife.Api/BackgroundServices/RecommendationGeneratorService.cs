@@ -81,7 +81,14 @@ public class RecommendationGeneratorService : BackgroundService
                 _logger.LogError(ex, "Error in RecommendationGeneratorService batch");
                 
                 // Back off on errors
-                await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken);
+                try
+                {
+                    await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
             }
         }
 

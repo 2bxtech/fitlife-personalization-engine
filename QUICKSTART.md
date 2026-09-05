@@ -25,7 +25,7 @@ npm run dev
 ### Option 2: Manual Setup
 ```powershell
 # 1. Start infrastructure
-docker-compose up -d
+docker compose up -d sqlserver redis zookeeper kafka
 
 # 2. Setup database
 cd FitLife.Api
@@ -54,6 +54,11 @@ docker exec fitlife-api dotnet FitLife.Api.dll --seed
 ```
 - **Frontend**: http://localhost:3000
 - **API/Swagger**: http://localhost:5269/swagger
+
+For local SDK runs, the API serves HTTP only. Start separate Consumer and
+Scheduler terminals using [Worker Topology](public-docs/Worker-Topology.md) when
+those features are needed. Full Docker configures both workers; do not start an
+additional local scheduler against its database.
 
 ## Demo Users
 

@@ -66,7 +66,7 @@ flowchart LR
 The repository is organized as a modular monolith:
 
 ```text
-FitLife.Api/              HTTP API, authorization, health checks, hosted workers
+FitLife.Api/              HTTP API and separate consumer/scheduler process roles
 FitLife.Core/             Domain models, DTOs, scoring and recommendation logic
 FitLife.Infrastructure/   EF Core, SQL Server, Redis, Kafka, repositories
 FitLife.Tests/            Unit, integration, migration and SQL invariant tests
@@ -148,6 +148,11 @@ dotnet run --project FitLife.Api
 - Liveness: `http://localhost:5269/health/live`
 - Readiness: `http://localhost:5269/health/ready`
 
+The API runs no background workers. To enable event ingestion and scheduled
+personalization, start the Consumer and Scheduler roles in separate terminals as
+described in [Worker Topology](public-docs/Worker-Topology.md). On-demand
+recommendations and transactional booking continue to run in the API.
+
 ### 4. Start the SPA
 
 ```powershell
@@ -182,7 +187,7 @@ $env:FITLIFE_SQLSERVER_TEST_CONNECTION = "<SQL Server test connection>"
 dotnet test FitLife.Tests --filter "FullyQualifiedName~BookingConcurrencyTests"
 ```
 
-The latest backend gate completed with 102 tests passing, including the SQL
+The latest backend gate completed with 127 tests passing, including the SQL
 Server concurrency, rollback, and event-deduplication harnesses. The unchanged
 frontend suite remains at 18 passing tests. This
 is local verification evidence, not a production performance or availability
@@ -240,9 +245,10 @@ synthetic data. It is not intended to collect real health information.
 
 The Kafka consumer applies three bounded processing attempts and publishes
 metadata-only poison-event records to `user-events-dlq` before committing the
-source offset. Scheduled workers are still co-located with the API; they must
-receive an explicit singleton owner or separate deployment before horizontal
-API scaling is enabled.
+source offset. API, consumer, and scheduler run in separate process roles.
+Compose and Kubernetes configure one scheduled owner; the scheduler must not be
+scaled or duplicated against the same database. See [Worker Topology](public-docs/Worker-Topology.md)
+for configuration, shutdown behavior, and ownership limits.
 
 ### Not currently claimed
 
