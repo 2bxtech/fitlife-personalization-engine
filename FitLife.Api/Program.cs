@@ -134,13 +134,14 @@ builder.Services.Configure<IpRateLimitOptions>(options =>
         {
             Endpoint = "*",
             Period = "1s",
-            Limit = 10 // 10 requests per second per IP
+            // Defaults 10/s and 100/min per client; configurable for load or e2e runs.
+            Limit = builder.Configuration.GetValue("RateLimiting:PerSecond", 10)
         },
         new RateLimitRule
         {
             Endpoint = "*",
             Period = "1m",
-            Limit = 100 // 100 requests per minute per IP
+            Limit = builder.Configuration.GetValue("RateLimiting:PerMinute", 100)
         }
     };
 });

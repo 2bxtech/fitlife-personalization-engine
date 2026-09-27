@@ -217,11 +217,31 @@ $env:FITLIFE_SQLSERVER_TEST_CONNECTION = "<SQL Server test connection>"
 dotnet test FitLife.Tests --filter "FullyQualifiedName~BookingConcurrencyTests"
 ```
 
-The latest backend gate completed with 127 tests passing, including the SQL
-Server concurrency, rollback, and event-deduplication harnesses. The unchanged
-frontend suite remains at 18 passing tests. This
-is local verification evidence, not a production performance or availability
-claim.
+CI runs these SQL Server tests against a disposable container on every push and
+pull request, and fails if any backend test is skipped.
+
+### End-to-end demo journey
+
+Playwright drives the demo in desktop and mobile browsers against a real API
+(SQL Server, Redis, and the Kafka-free event transport). It covers:
+
+- the persona journey: reasons, the factor breakdown, booking, switching
+  personas, and the reset on re-entry;
+- a booking whose follow-up re-rank fails;
+- keyboard use, including the skip link and focus after navigation;
+- the mobile menu;
+- axe WCAG 2.1 AA scans (no serious or critical violations).
+
+CI runs this suite as the `e2e` job. Locally, with the API running on `:5269`:
+
+```powershell
+cd fitlife-web
+npm run build; npm run preview   # serves :4173 and proxies /api to :5269
+npm run test:e2e
+```
+
+Test counts change with every PR; the CI run on `main` is the current record.
+None of this is a production performance or availability claim.
 
 ## API surface
 
