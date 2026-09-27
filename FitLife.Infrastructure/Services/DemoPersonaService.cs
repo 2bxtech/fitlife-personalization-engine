@@ -61,6 +61,8 @@ public sealed class DemoPersonaService
             await using var transaction = _context.Database.IsRelational()
                 ? await _context.Database.BeginTransactionAsync(cancellationToken)
                 : null;
+            if (transaction != null)
+                await LockPersonaAsync(persona.Id, cancellationToken);
 
             var user = await RestoreUserAsync(persona.UserId, now, cancellationToken);
             await ReplaceHistoryAsync(persona.UserId, now, cancellationToken);
@@ -74,6 +76,21 @@ public sealed class DemoPersonaService
             _logger.LogInformation("Reset demo persona {PersonaId}", persona.Id);
             return user;
         });
+    }
+
+    /// <summary>
+    /// Serializes resets of one persona. Without it, two concurrent sessions both
+    /// delete and re-insert the same history, duplicating it. Held until commit.
+    /// </summary>
+    private Task LockPersonaAsync(string personaId, CancellationToken cancellationToken)
+    {
+        var resource = $"fitlife-demo-reset:{personaId}";
+        return _context.Database.ExecuteSqlInterpolatedAsync($"""
+            DECLARE @result int;
+            EXEC @result = sp_getapplock @Resource = {resource}, @LockMode = 'Exclusive',
+                @LockOwner = 'Transaction', @LockTimeout = 15000;
+            IF @result < 0 THROW 50001, 'Timed out waiting for a demo persona reset lock.', 1;
+            """, cancellationToken);
     }
 
     private async Task<User> RestoreUserAsync(string userId, DateTime now, CancellationToken cancellationToken)

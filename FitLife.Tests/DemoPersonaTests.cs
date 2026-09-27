@@ -176,6 +176,10 @@ public class DemoPersonaTests : IClassFixture<DemoPersonaTests.DemoFactory>, IAs
             await using var verify = new FitLifeDbContext(options);
             foreach (var classItem in await verify.Classes.ToListAsync())
                 classItem.CurrentEnrollment.Should().Be(DemoCatalog.BaselineEnrollment(classItem.Id));
+            // Same-persona resets must serialize, or history is duplicated.
+            foreach (var persona in DemoCatalog.Personas)
+                (await verify.Interactions.CountAsync(i => i.UserId == persona.UserId))
+                    .Should().Be(DemoCatalog.History(persona.UserId, DateTime.UtcNow).Count);
         }
         finally
         {
