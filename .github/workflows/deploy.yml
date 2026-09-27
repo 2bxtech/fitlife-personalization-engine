@@ -37,8 +37,33 @@ jobs:
     - name: Build solution
       run: dotnet build --configuration Release --no-restore
 
-    - name: Run backend tests
-      run: dotnet test --no-build --verbosity normal --configuration Release
+    # The four SqlServerFact tests (booking last-seat race, filtered booking index,
+    # EventId uniqueness, concurrent duplicate delivery) skip without a database.
+    - name: Start disposable SQL Server
+      run: |
+        sa_secret="$(openssl rand -hex 16)Aa1-"
+        echo "::add-mask::$sa_secret"
+        docker run -d --name ci-sqlserver -e ACCEPT_EULA=Y -e "MSSQL_SA_PASSWORD=$sa_secret"           -p 1433:1433 mcr.microsoft.com/mssql/server:2022-latest
+        for attempt in $(seq 1 30); do
+          if docker exec ci-sqlserver /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa                -P "$sa_secret" -C -Q "SELECT 1" -b > /dev/null 2>&1; then
+            echo "SQL Server ready after $attempt checks"
+            echo "FITLIFE_SQLSERVER_TEST_CONNECTION=Server=localhost,1433;User Id=sa;Password=$sa_secret;TrustServerCertificate=True;" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          sleep 5
+        done
+        docker logs ci-sqlserver | tail -20
+        exit 1
+
+    - name: Run backend tests (SQL Server tests must not skip)
+      run: |
+        set -o pipefail
+        dotnet test --no-build --verbosity normal --configuration Release | tee test-output.log
+        # 'normal' verbosity lists each skipped test and a 'Skipped: N' summary line.
+        if grep -Eq '^[[:space:]]*Skipped[[:space:]:]' test-output.log; then
+          echo "::error::Backend tests were skipped; the SQL Server tests did not run."
+          exit 1
+        fi
 
   test-frontend:
     name: Frontend Lint, Tests & Build
