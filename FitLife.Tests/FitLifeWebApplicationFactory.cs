@@ -27,6 +27,9 @@ public class FitLifeWebApplicationFactory : WebApplicationFactory<Program>
     protected virtual IReadOnlyDictionary<string, string> StartupSettings =>
         new Dictionary<string, string>();
 
+    /// <summary>InMemory database name; override to isolate a test class's data.</summary>
+    protected virtual string DatabaseName => "FitLifeTestDb";
+
     /// <summary>When false, the app's own IEventPublisher registration is kept.</summary>
     protected virtual bool UseRecordingEventPublisher => true;
 
@@ -50,7 +53,7 @@ public class FitLifeWebApplicationFactory : WebApplicationFactory<Program>
             // SQL Server is not registered because Program.cs checks for Testing environment
             services.AddDbContext<FitLifeDbContext>(options =>
             {
-                options.UseInMemoryDatabase("FitLifeTestDb");
+                options.UseInMemoryDatabase(DatabaseName);
             });
 
             services.RemoveAll<IRedisHealthProbe>();

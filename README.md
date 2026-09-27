@@ -140,12 +140,31 @@ for the trade-offs.
 
 ### 2. Apply migrations and seed demo data
 
-The API applies pending EF Core migrations at startup. Seed the repeatable demo
-personas once:
+The API applies pending EF Core migrations at startup. When `Demo:Enabled` is
+true (the default in the local launch profiles and Compose), it also seeds the
+synthetic catalog and personas at startup. Otherwise, seed once:
 
 ```powershell
 dotnet run --project FitLife.Api --seed
 ```
+
+#### Demo personas
+
+Three synthetic members (`sarah`, `mike`, `emily`) have fixed histories chosen so
+the scheduled profiler assigns the segment each is seeded with.
+`POST /api/demo/personas/{id}/session` resets that persona and returns a Member
+token:
+
+- the profile, interaction history, and stored recommendations are restored;
+- the persona's active bookings are cancelled;
+- class enrollment is recomputed from active bookings.
+
+Every visitor therefore starts from the same, reproducible recommendations.
+**Verified in tests:** two personas get disjoint top-three results, the profiler
+agrees with every seeded segment, and a new session undoes the previous visitor's
+booking. The routes return 404 unless `Demo:Enabled` is true, and a session never
+grants operator access. Visitors on the same persona share one member, so the
+latest session resets it.
 
 ### 3. Start the API
 

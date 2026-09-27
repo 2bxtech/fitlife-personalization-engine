@@ -17,6 +17,7 @@ services:
     environment: !override
       - Process__Role=Api
       - Events__Transport=Direct
+      - Demo__Enabled=true
       - ASPNETCORE_ENVIRONMENT=Development
       - ConnectionStrings__DefaultConnection=Server=sqlserver,1433;Database=FitLifeDb;User Id=sa;Password=YourStrong@Passw0rd;TrustServerCertificate=True;
       - Redis__ConnectionString=redis:6379

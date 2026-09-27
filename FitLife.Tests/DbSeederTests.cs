@@ -29,7 +29,7 @@ public class DbSeederTests
         await seeder.SeedAsync();
 
         (await context.Users.CountAsync()).Should().Be(6);
-        (await context.Classes.CountAsync()).Should().Be(10);
+        (await context.Classes.CountAsync()).Should().Be(DemoCatalog.Classes(DateTime.UtcNow).Count);
         (await context.Interactions.CountAsync()).Should().BeGreaterThan(0);
 
         var interactionCount = await context.Interactions.CountAsync();
@@ -39,7 +39,7 @@ public class DbSeederTests
         await seeder.SeedAsync();
 
         (await context.Users.CountAsync()).Should().Be(6);
-        (await context.Classes.CountAsync()).Should().Be(10);
+        (await context.Classes.CountAsync()).Should().Be(DemoCatalog.Classes(DateTime.UtcNow).Count);
         (await context.Interactions.CountAsync()).Should().Be(interactionCount);
         (await context.Classes.FindAsync(staleClass.Id))!
             .StartTime.Should().BeAfter(DateTime.UtcNow);
