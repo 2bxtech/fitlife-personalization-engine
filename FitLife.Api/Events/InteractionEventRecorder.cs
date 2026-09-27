@@ -1,3 +1,4 @@
+using FitLife.Api.Observability;
 using FitLife.Core.Interfaces;
 using FitLife.Core.Models;
 using Microsoft.Data.SqlClient;
@@ -18,6 +19,7 @@ public sealed class InteractionEventRecorder
 
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger _logger;
+    private readonly FitLifeMetrics? _metrics;
 
     public InteractionEventRecorder(IServiceProvider serviceProvider, ILogger<InteractionEventRecorder> logger)
         : this(serviceProvider, (ILogger)logger)
@@ -28,6 +30,7 @@ public sealed class InteractionEventRecorder
     {
         _serviceProvider = serviceProvider;
         _logger = logger;
+        _metrics = serviceProvider.GetService<FitLifeMetrics>();
     }
 
     /// <summary>Returns false when the event was already stored (duplicate delivery).</summary>
@@ -75,6 +78,8 @@ public sealed class InteractionEventRecorder
                 }
             }
         }
+
+        _metrics?.EventRecorded(stored);
 
         if (CacheInvalidatingEvents.Contains(userEvent.EventType))
         {

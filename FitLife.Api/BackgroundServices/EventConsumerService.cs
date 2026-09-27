@@ -1,5 +1,6 @@
 using Confluent.Kafka;
 using FitLife.Api.Events;
+using FitLife.Api.Observability;
 using FitLife.Core.Interfaces;
 using FitLife.Core.Models;
 using Microsoft.Extensions.Configuration;
@@ -200,6 +201,7 @@ public class EventConsumerService : BackgroundService
             }
             catch (Exception ex) when (attempt < maxAttempts)
             {
+                _serviceProvider.GetService<FitLifeMetrics>()?.EventRetried();
                 _logger.LogWarning(
                     ex,
                     "Event processing attempt {Attempt}/{MaxAttempts} failed at " +
@@ -314,6 +316,7 @@ public class EventConsumerService : BackgroundService
             deadLetter.MessageKey,
             deadLetter,
             cancellationToken);
+        _serviceProvider.GetService<FitLifeMetrics>()?.EventDeadLettered(disposition);
     }
 
     private static string? ValidateEvent(UserEvent userEvent)

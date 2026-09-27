@@ -1,3 +1,4 @@
+using FitLife.Api.Observability;
 using FitLife.Core.Interfaces;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
@@ -58,15 +59,7 @@ public class RecommendationGeneratorService : BackgroundService
         {
             try
             {
-                var startTime = DateTime.UtcNow;
-                _logger.LogInformation("Starting recommendation generation batch");
-
-                await GenerateRecommendationsBatchAsync(batchSize, processActiveOnly, stoppingToken);
-
-                var elapsed = (DateTime.UtcNow - startTime).TotalSeconds;
-                _logger.LogInformation(
-                    "Completed recommendation generation batch in {Duration}s",
-                    elapsed);
+                await RunBatchAsync(batchSize, processActiveOnly, stoppingToken);
 
                 // Wait for next interval
                 await Task.Delay(TimeSpan.FromMinutes(intervalMinutes), stoppingToken);
@@ -76,10 +69,9 @@ public class RecommendationGeneratorService : BackgroundService
                 _logger.LogInformation("RecommendationGeneratorService is shutting down");
                 break;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                _logger.LogError(ex, "Error in RecommendationGeneratorService batch");
-                
+                // WorkerRun has already logged and counted the failure.
                 // Back off on errors
                 try
                 {
@@ -95,10 +87,16 @@ public class RecommendationGeneratorService : BackgroundService
         _logger.LogInformation("RecommendationGeneratorService stopped");
     }
 
+    internal Task RunBatchAsync(int batchSize, bool processActiveOnly, CancellationToken cancellationToken) =>
+        WorkerRun.ExecuteAsync("recommendation-generator", _logger,
+            _serviceProvider.GetService<FitLifeMetrics>(),
+            () => GenerateRecommendationsBatchAsync(batchSize, processActiveOnly, cancellationToken),
+            cancellationToken);
+
     /// <summary>
     /// Generates recommendations for a batch of active users
     /// </summary>
-    private async Task GenerateRecommendationsBatchAsync(
+    private async Task<(int Succeeded, int Failed)> GenerateRecommendationsBatchAsync(
         int batchSize, 
         bool processActiveOnly, 
         CancellationToken cancellationToken)
@@ -147,7 +145,7 @@ public class RecommendationGeneratorService : BackgroundService
             if (!userIds.Any())
             {
                 _logger.LogInformation("No users to process in this batch");
-                return;
+                return (0, 0);
             }
 
             // Generate recommendations for each user
@@ -180,6 +178,7 @@ public class RecommendationGeneratorService : BackgroundService
             _logger.LogInformation(
                 "Batch complete: {Success} successful, {Failures} failed out of {Total} users",
                 successCount, failureCount, userIds.Count);
+            return (successCount, failureCount);
         }
     }
 }

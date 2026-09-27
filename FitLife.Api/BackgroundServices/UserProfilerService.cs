@@ -1,3 +1,4 @@
+using FitLife.Api.Observability;
 using FitLife.Core.Interfaces;
 using FitLife.Core.Models;
 using Microsoft.Extensions.Configuration;
@@ -59,13 +60,10 @@ public class UserProfilerService : BackgroundService
         {
             try
             {
-                var startTime = DateTime.UtcNow;
-                _logger.LogInformation("Starting user profiling batch");
-
-                await ProfileUsersBatchAsync(lookbackDays, stoppingToken);
-
-                var elapsed = (DateTime.UtcNow - startTime).TotalSeconds;
-                _logger.LogInformation("Completed user profiling batch in {Duration}s", elapsed);
+                await WorkerRun.ExecuteAsync("user-profiler", _logger,
+                    _serviceProvider.GetService<FitLifeMetrics>(),
+                    () => ProfileUsersBatchAsync(lookbackDays, stoppingToken),
+                    stoppingToken);
 
                 // Wait for next interval
                 await Task.Delay(TimeSpan.FromMinutes(intervalMinutes), stoppingToken);
@@ -75,10 +73,9 @@ public class UserProfilerService : BackgroundService
                 _logger.LogInformation("UserProfilerService is shutting down");
                 break;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                _logger.LogError(ex, "Error in UserProfilerService batch");
-                
+                // WorkerRun has already logged and counted the failure.
                 // Back off on errors
                 try
                 {
@@ -97,7 +94,7 @@ public class UserProfilerService : BackgroundService
     /// <summary>
     /// Processes all users and updates their segments based on interaction history
     /// </summary>
-    internal async Task ProfileUsersBatchAsync(int lookbackDays, CancellationToken cancellationToken)
+    internal async Task<(int Succeeded, int Failed)> ProfileUsersBatchAsync(int lookbackDays, CancellationToken cancellationToken)
     {
         using (var scope = _serviceProvider.CreateScope())
         {
@@ -112,6 +109,7 @@ public class UserProfilerService : BackgroundService
 
             var segmentChanges = 0;
             var processedCount = 0;
+            var failedCount = 0;
 
             foreach (var user in allUsers)
             {
@@ -154,12 +152,14 @@ public class UserProfilerService : BackgroundService
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Error profiling user {UserId}", user.Id);
+                    failedCount++;
                 }
             }
 
             _logger.LogInformation(
                 "Profiling complete: {Processed} users processed, {Changes} segment changes",
                 processedCount, segmentChanges);
+            return (processedCount, failedCount);
         }
     }
 

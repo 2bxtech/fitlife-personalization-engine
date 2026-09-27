@@ -2,6 +2,7 @@ using FitLife.Core.DTOs;
 using FitLife.Core.Models;
 using FitLife.Core.Interfaces;
 using FitLife.Api.Auth;
+using FitLife.Api.Observability;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json;
@@ -19,14 +20,17 @@ public class EventsController : ControllerBase
 {
     private readonly IEventPublisher _eventPublisher;
     private readonly ILogger<EventsController> _logger;
+    private readonly FitLifeMetrics _metrics;
     private const string UserEventsTopic = "user-events";
 
     public EventsController(
         IEventPublisher eventPublisher,
-        ILogger<EventsController> logger)
+        ILogger<EventsController> logger,
+        FitLifeMetrics metrics)
     {
         _eventPublisher = eventPublisher;
         _logger = logger;
+        _metrics = metrics;
     }
 
     /// <summary>
@@ -82,12 +86,7 @@ public class EventsController : ControllerBase
 
             // Kafka: wait for broker acknowledgement; partition key = UserId preserves
             // per-user ordering. Direct: returns after the SQL write commits.
-            await _eventPublisher.PublishAsync(
-                topic: UserEventsTopic,
-                key: userEvent.UserId,
-                userEvent: userEvent,
-                cancellationToken: HttpContext.RequestAborted
-            );
+            await PublishCountedAsync(userEvent);
 
             _logger.LogInformation(
                 "Event tracked: User {UserId} performed {EventType} on {ItemType} {ItemId}",
@@ -184,11 +183,7 @@ public class EventsController : ControllerBase
             foreach (var eventDto in events)
             {
                 var userEvent = CreateUserEvent(eventDto);
-                await _eventPublisher.PublishAsync(
-                    UserEventsTopic,
-                    userEvent.UserId,
-                    userEvent,
-                    HttpContext.RequestAborted);
+                await PublishCountedAsync(userEvent);
                 publishedCount++;
                 publishedEventIds.Add(userEvent.EventId);
             }
@@ -218,6 +213,21 @@ public class EventsController : ControllerBase
                 Message = "Failed to process event batch"
             });
         }
+    }
+
+    private async Task PublishCountedAsync(UserEvent userEvent)
+    {
+        try
+        {
+            await _eventPublisher.PublishAsync(
+                UserEventsTopic, userEvent.UserId, userEvent, HttpContext.RequestAborted);
+        }
+        catch
+        {
+            _metrics.EventPublished(success: false);
+            throw;
+        }
+        _metrics.EventPublished(success: true);
     }
 
     private UserEvent CreateUserEvent(EventDto eventDto)
