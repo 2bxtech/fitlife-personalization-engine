@@ -19,15 +19,24 @@ function isTokenExpired(token: string): boolean {
   }
 }
 
-// Request interceptor: Add JWT token (skip if expired)
+/** Ends the session with an explanation and a way back to where the member was. */
+function endSession() {
+  const authStore = useAuthStore()
+  const wasDemo = authStore.personaId !== null
+  authStore.expireSession()
+  const current = router.currentRoute.value
+  if (wasDemo) void router.push('/')
+  else void router.push({ path: '/login', query: { redirect: current.fullPath } })
+}
+
+// Request interceptor: attach the JWT; end an expired session before sending.
 api.interceptors.request.use(
   (config) => {
     const authStore = useAuthStore()
     if (authStore.token) {
       if (isTokenExpired(authStore.token)) {
-        authStore.logout()
-        router.push('/login')
-        return Promise.reject(new axios.Cancel('Token expired'))
+        endSession()
+        return Promise.reject(new axios.Cancel('Session expired'))
       }
       config.headers.Authorization = `Bearer ${authStore.token}`
     }
@@ -36,15 +45,11 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 )
 
-// Response interceptor: Handle 401 (logout)
+// Response interceptor: the server rejected the credentials of an active session.
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
-      const authStore = useAuthStore()
-      authStore.logout()
-      router.push('/login')
-    }
+    if (error.response?.status === 401 && useAuthStore().token) endSession()
     return Promise.reject(error)
   }
 )

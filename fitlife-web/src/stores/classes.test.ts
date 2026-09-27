@@ -104,12 +104,12 @@ describe('useClassStore', () => {
 
     const store = useClassStore()
     store.classes = [mockClass]
-    const message = await store.bookClass('c1')
+    const result = await store.bookClass('c1')
 
     expect(classService.bookClass).toHaveBeenCalledWith('c1')
     expect(store.classes[0]).toEqual(bookedClass)
-    expect(message).toBe('Class booked successfully')
-    expect(store.actionClassId).toBeNull()
+    expect(result.message).toBe('Class booked successfully')
+    expect(store.isPending('c1')).toBe(false)
   })
 
   it('cancelBooking updates booking state without refetching the list', async () => {
@@ -131,11 +131,11 @@ describe('useClassStore', () => {
 
     const store = useClassStore()
     store.classes = [bookedClass]
-    const message = await store.cancelBooking('c1')
+    const result = await store.cancelBooking('c1')
 
     expect(classService.cancelBooking).toHaveBeenCalledWith('c1')
     expect(store.classes[0]).toEqual(cancelledClass)
-    expect(message).toBe('Booking cancelled successfully')
+    expect(result.message).toBe('Booking cancelled successfully')
     expect(classService.getClasses).not.toHaveBeenCalled()
   })
 
@@ -149,7 +149,48 @@ describe('useClassStore', () => {
     const store = useClassStore()
 
     await expect(store.bookClass('c1')).rejects.toThrow('Class is full')
-    expect(store.error).toBe('Class is full')
-    expect(store.actionClassId).toBeNull()
+    expect(store.isPending('c1')).toBe(false)
+  })
+
+  it('tracks pending actions per class, so one booking does not block another card', async () => {
+    const { classService } = await import('@/services/classService')
+    const resolvers: Array<() => void> = []
+    vi.mocked(classService.bookClass).mockImplementation(
+      (id: string) =>
+        new Promise((resolve) =>
+          resolvers.push(() => resolve({ classData: { ...mockClass, id }, message: 'ok' }))
+        )
+    )
+
+    const store = useClassStore()
+    const first = store.bookClass('c1')
+    const second = store.bookClass('c2')
+
+    expect(store.isPending('c1')).toBe(true)
+    expect(store.isPending('c2')).toBe(true)
+    resolvers[0]!()
+    await first
+    expect(store.isPending('c1')).toBe(false)
+    expect(store.isPending('c2')).toBe(true)
+    resolvers[1]!()
+    await second
+    expect(store.isPending('c2')).toBe(false)
+  })
+
+  it('ignores a slower filter response once a newer filter was applied', async () => {
+    const { classService } = await import('@/services/classService')
+    let resolveFirst!: (value: (typeof mockClass)[]) => void
+    vi.mocked(classService.getClasses)
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveFirst = resolve)))
+      .mockResolvedValueOnce([{ ...mockClass, id: 'spin', type: 'Spin' }])
+
+    const store = useClassStore()
+    const first = store.fetchClasses({ type: 'Yoga' })
+    await store.fetchClasses({ type: 'Spin' })
+    resolveFirst([mockClass])
+    await first
+
+    expect(store.classes.map((c) => c.id)).toEqual(['spin'])
+    expect(store.loading).toBe(false)
   })
 })

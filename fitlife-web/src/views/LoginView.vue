@@ -1,10 +1,18 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { safeRedirect } from '@/router'
+import AppAlert from '@/components/ui/AppAlert.vue'
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
+const notice = ref<string | null>(null)
+
+onMounted(() => {
+  notice.value = authStore.consumeSessionNotice()
+})
 
 const email = ref('')
 const password = ref('')
@@ -17,7 +25,7 @@ async function handleLogin() {
   
   try {
     await authStore.login({ email: email.value, password: password.value })
-    router.push('/dashboard')
+    router.push(safeRedirect(route.query.redirect))
   } catch (e: any) {
     error.value = e.response?.data?.error || 'Login failed. Please check your credentials.'
   } finally {
@@ -41,6 +49,12 @@ async function handleLogin() {
         </p>
       </div>
       
+      <AppAlert v-if="notice" tone="warning">{{ notice }}</AppAlert>
+      <p class="rounded-xl bg-primary-50 p-3 text-sm text-primary-900 ring-1 ring-inset ring-primary-200">
+        Just looking?
+        <router-link :to="{ path: '/', hash: '#personas' }" class="font-semibold underline">Explore as a demo member</router-link>
+        with one click, no account needed.
+      </p>
       <form class="mt-8 space-y-6" @submit.prevent="handleLogin">
         <div v-if="error" class="bg-red-50 border border-red-200 rounded-lg p-4">
           <p class="text-red-800 text-sm">{{ error }}</p>
