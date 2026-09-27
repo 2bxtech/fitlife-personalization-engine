@@ -1,0 +1,22 @@
+# Kafka-free minimal demo profile (SQL Server + Redis + API + scheduler + web).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.minimal.yml up -d --build api scheduler web
+#
+# Events:Transport=Direct makes the API persist accepted events in-request through
+# the same idempotent recorder the Kafka consumer uses. There is no broker,
+# consumer process, retry loop, or dead-letter topic in this profile; a failed write
+# is returned to the caller. Naming only api/scheduler/web keeps Zookeeper, Kafka,
+# and the consumer from starting.
+services:
+  api:
+    depends_on: !override
+      sqlserver:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment: !override
+      - Process__Role=Api
+      - Events__Transport=Direct
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Server=sqlserver,1433;Database=FitLifeDb;User Id=sa;Password=YourStrong@Passw0rd;TrustServerCertificate=True;
+      - Redis__ConnectionString=redis:6379

@@ -1,8 +1,7 @@
 using Confluent.Kafka;
+using FitLife.Api.Events;
 using FitLife.Core.Interfaces;
 using FitLife.Core.Models;
-using Microsoft.Data.SqlClient;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -266,75 +265,8 @@ public class EventConsumerService : BackgroundService
                 "Processing event: User={UserId}, Item={ItemId}, Type={EventType}",
                 userEvent.UserId, userEvent.ItemId, userEvent.EventType);
 
-            // Create interaction entity
-            var metadataJson = userEvent.Metadata != null 
-                ? JsonSerializer.Serialize(userEvent.Metadata) 
-                : "{}";
-
-            var interaction = new Interaction
-            {
-                UserId = userEvent.UserId,
-                ItemId = userEvent.ItemId,
-                ItemType = userEvent.ItemType,
-                EventType = userEvent.EventType,
-                Timestamp = userEvent.OccurredAt,
-                Metadata = metadataJson
-            };
-
-            // Store in database using scoped service
-            using (var scope = _serviceProvider.CreateScope())
-            {
-                var interactionRepository = scope.ServiceProvider.GetRequiredService<IInteractionRepository>();
-                if (await interactionRepository.ExistsByEventIdAsync(
-                        userEvent.EventId))
-                {
-                    _logger.LogInformation(
-                        "Ignoring duplicate event {EventId}",
-                        userEvent.EventId);
-                }
-                else
-                {
-                    var stored = true;
-                    interaction.EventId = userEvent.EventId;
-                    await interactionRepository.AddAsync(interaction);
-
-                    try
-                    {
-                        await interactionRepository.SaveChangesAsync();
-                    }
-                    catch (DbUpdateException ex) when (IsDuplicateEventId(ex))
-                    {
-                        stored = false;
-                        // The unique EventId index is the final concurrency
-                        // boundary. Continue to idempotent cache invalidation
-                        // so a prior post-write failure can recover.
-                        _logger.LogInformation(
-                            "Ignoring duplicate event {EventId} (unique constraint)",
-                            userEvent.EventId);
-                    }
-
-                    if (stored)
-                    {
-                        _logger.LogInformation(
-                            "Stored interaction: {InteractionId} - User={UserId}, Event={EventType}",
-                            interaction.Id, interaction.UserId, interaction.EventType);
-                    }
-                }
-            }
-
-            // Check if cache invalidation is needed (for Book, Cancel, Complete, Rate events)
-            var cacheInvalidatingEvents = new[] { "Book", "Cancel", "Complete", "Rate" };
-            if (cacheInvalidatingEvents.Contains(userEvent.EventType))
-            {
-                using (var scope = _serviceProvider.CreateScope())
-                {
-                    var recommendationService = scope.ServiceProvider.GetRequiredService<IRecommendationService>();
-                    await recommendationService.InvalidateCacheAsync(userEvent.UserId);
-
-                    _logger.LogDebug("Invalidated recommendation cache for user {UserId} after {EventType}", 
-                        userEvent.UserId, userEvent.EventType);
-                }
-            }
+            await new InteractionEventRecorder(_serviceProvider, _logger)
+                .RecordAsync(userEvent);
 
             return EventProcessingOutcome.Success(userEvent.EventId);
         }
@@ -409,10 +341,6 @@ public class EventConsumerService : BackgroundService
 
         return null;
     }
-
-    private static bool IsDuplicateEventId(DbUpdateException ex) =>
-        ex.InnerException is SqlException sqlException
-        && (sqlException.Number == 2601 || sqlException.Number == 2627);
 }
 
 internal sealed record EventProcessingOutcome(

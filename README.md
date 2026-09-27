@@ -128,6 +128,12 @@ docker compose up -d sqlserver redis zookeeper kafka
 
 This starts SQL Server on port `1433`, Redis on `6380`, and Kafka on `9092`.
 
+Kafka is optional for the demo. Omit `zookeeper kafka` and start the API with
+`dotnet run --project FitLife.Api -- --Events:Transport=Direct` to persist
+events in-request instead; see
+[Kafka-free minimal demo](public-docs/Worker-Topology.md#kafka-free-minimal-demo)
+for the trade-offs.
+
 ### 2. Apply migrations and seed demo data
 
 The API applies pending EF Core migrations at startup. Seed the repeatable demo

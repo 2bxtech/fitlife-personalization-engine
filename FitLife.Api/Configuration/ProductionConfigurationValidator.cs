@@ -41,7 +41,9 @@ public static class ProductionConfigurationValidator
             invalidKeys.Add("Redis:ConnectionString");
         }
 
-        if (role != ProcessRole.Scheduler && IsMissingOrLocal(kafkaBootstrapServers))
+        if (role != ProcessRole.Scheduler
+            && EventTransport.Read(configuration) == EventTransportMode.Kafka
+            && IsMissingOrLocal(kafkaBootstrapServers))
         {
             invalidKeys.Add("Kafka:BootstrapServers");
         }

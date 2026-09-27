@@ -20,9 +20,21 @@ namespace FitLife.Tests;
 /// </summary>
 public class FitLifeWebApplicationFactory : WebApplicationFactory<Program>
 {
+    /// <summary>
+    /// Settings visible to Program's startup-time configuration reads
+    /// (UseSetting applies before service registration; app configuration does not).
+    /// </summary>
+    protected virtual IReadOnlyDictionary<string, string> StartupSettings =>
+        new Dictionary<string, string>();
+
+    /// <summary>When false, the app's own IEventPublisher registration is kept.</summary>
+    protected virtual bool UseRecordingEventPublisher => true;
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
+        foreach (var (key, value) in StartupSettings)
+            builder.UseSetting(key, value);
         builder.ConfigureLogging(logging => logging.ClearProviders());
         builder.ConfigureAppConfiguration((_, configuration) =>
         {
@@ -43,6 +55,8 @@ public class FitLifeWebApplicationFactory : WebApplicationFactory<Program>
 
             services.RemoveAll<IRedisHealthProbe>();
             services.AddSingleton<IRedisHealthProbe, HealthyRedisHealthProbe>();
+            if (!UseRecordingEventPublisher)
+                return;
             services.RemoveAll<IEventPublisher>();
             services.AddSingleton<RecordingEventPublisher>();
             services.AddSingleton<IEventPublisher>(serviceProvider =>

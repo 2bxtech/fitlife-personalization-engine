@@ -42,6 +42,29 @@ Workers wait for API readiness, which follows local startup migrations. The imag
 HTTP health check is disabled for worker containers because they have no HTTP
 listener. Process exit status and logs are their current operational signals.
 
+## Kafka-free minimal demo
+
+**Verified in tests and a local Compose smoke:** `Events:Transport=Direct`
+removes the broker from the runtime. The API persists each accepted event
+inside the request through the same idempotent recorder the consumer uses
+(EventId lookup plus the unique EventId index), then invalidates the user's
+recommendation cache for Book, Cancel, Complete, and Rate events.
+
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.minimal.yml up -d --build api scheduler web
+```
+
+Trade-offs compared with the Kafka transport:
+
+- A `200` response means the interaction is committed to SQL, not that a broker
+  acknowledged it.
+- There is no consumer retry loop, dead-letter topic, or replay. A failed write
+  returns an error to the caller, who can retry with the same `EventId`.
+- Event writes add SQL latency to the request path.
+- `Process:Role=Consumer` with `Events:Transport=Direct` fails startup, and
+  unknown transport values fail closed. In Production, the broker setting is only
+  required when the transport is `Kafka` (the default).
+
 ## Singleton boundary
 
 The supported scheduled topology has exactly one owner:
