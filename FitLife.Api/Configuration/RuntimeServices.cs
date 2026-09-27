@@ -1,3 +1,4 @@
+using FitLife.Api.Events;
 using FitLife.Core.Interfaces;
 using FitLife.Core.Services;
 using FitLife.Infrastructure.Cache;
@@ -41,7 +42,14 @@ public static class RuntimeServices
         services.AddScoped<IScoringEngine, ScoringEngine>();
         services.AddScoped<IRecommendationService, RecommendationService>();
 
-        if (role != ProcessRole.Scheduler)
+        var transport = EventTransport.Read(configuration);
+        if (role != ProcessRole.Scheduler && transport == EventTransportMode.Direct)
+        {
+            // Minimal demo: no broker. Accepted events are persisted in-request.
+            services.AddSingleton<InteractionEventRecorder>();
+            services.AddSingleton<IEventPublisher, DirectEventPublisher>();
+        }
+        else if (role != ProcessRole.Scheduler)
         {
             // Register Kafka producer (singleton - connection pooling)
             services.AddSingleton<KafkaProducer>();

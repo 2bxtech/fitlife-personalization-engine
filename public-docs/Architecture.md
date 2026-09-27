@@ -388,6 +388,8 @@ TLS termination and HSTS, secrets in Azure Key Vault or Kubernetes Secrets, rate
 
 **Alternative considered**: Azure Service Bus. Lower operational overhead and a built-in dead-letter queue, which would have removed the hand-rolled DLQ path and its non-atomic commit seam described above. Rejected for partitioned ordering and replay. Azure Event Hubs is a possible managed target but is **not** the current runtime.
 
+**Minimal-demo option**: `Events:Transport=Direct` runs without a broker by persisting events in the API request through the consumer's idempotent recorder. It gives up retry, dead-lettering, and replay in exchange for one fewer always-on dependency. See [Worker topology](Worker-Topology.md#kafka-free-minimal-demo).
+
 ### 3. Batch recommendation generation
 
 **Decision**: Hybrid. Batch generation every 10 minutes, Redis for reads, explicit invalidation on state changes.

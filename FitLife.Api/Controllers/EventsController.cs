@@ -10,7 +10,7 @@ namespace FitLife.Api.Controllers;
 
 /// <summary>
 /// Event tracking endpoint for user interactions
-/// Publishes events to Kafka for downstream processing
+/// Publishes events through the configured transport (Kafka, or Direct in-request persistence)
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
@@ -80,8 +80,8 @@ public class EventsController : ControllerBase
 
             var userEvent = CreateUserEvent(eventDto);
 
-            // Wait for broker acknowledgement before accepting the event.
-            // Partition key = UserId preserves per-user ordering.
+            // Kafka: wait for broker acknowledgement; partition key = UserId preserves
+            // per-user ordering. Direct: returns after the SQL write commits.
             await _eventPublisher.PublishAsync(
                 topic: UserEventsTopic,
                 key: userEvent.UserId,

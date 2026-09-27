@@ -18,6 +18,12 @@ public static class ProcessTopology
 
     public static void Validate(IConfiguration configuration, ProcessRole role)
     {
+        // A consumer without a broker would silently do nothing; fail closed instead.
+        if (role == ProcessRole.Consumer
+            && EventTransport.Read(configuration) == EventTransportMode.Direct)
+            throw new InvalidOperationException(
+                "Process:Role Consumer requires Events:Transport Kafka.");
+
         Check("EventConsumer", role == ProcessRole.Consumer);
         Check("RecommendationGenerator", role == ProcessRole.Scheduler);
         Check("UserProfiler", role == ProcessRole.Scheduler);
