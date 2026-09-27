@@ -136,6 +136,7 @@ public class FitLifeDbContext : DbContext
             
             entity.Property(e => e.ItemType).HasMaxLength(50);
             entity.Property(e => e.Reason).HasMaxLength(500);
+            entity.Property(e => e.FactorsJson).HasDefaultValue("[]");
             entity.Property(e => e.Score).HasPrecision(10, 4); // e.g., 98.7543
             
             entity.HasOne(e => e.User)

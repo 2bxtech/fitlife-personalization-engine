@@ -16,4 +16,10 @@ public interface IScoringEngine
     /// <param name="userInteractions">User's interaction history for pattern analysis</param>
     /// <returns>Score between 0 and ~150 (higher is better)</returns>
     double CalculateScore(User user, Class classItem, List<Interaction> userInteractions);
+
+    /// <summary>
+    /// Scores a class and returns every factor's contribution with a plain-language
+    /// detail. <see cref="ScoreBreakdown.Total"/> is the score used for ranking.
+    /// </summary>
+    ScoreBreakdown Explain(User user, Class classItem, ScoringHistory history);
 }

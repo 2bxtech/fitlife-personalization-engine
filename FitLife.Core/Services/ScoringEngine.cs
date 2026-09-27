@@ -1,13 +1,15 @@
 using FitLife.Core.Interfaces;
 using FitLife.Core.Models;
 using Microsoft.Extensions.Logging;
+using System.Globalization;
 using System.Text.Json;
 
 namespace FitLife.Core.Services;
 
 /// <summary>
-/// Core recommendation scoring engine implementing the 9-factor algorithm
-/// Calculates personalized scores to rank class recommendations
+/// Deterministic nine-factor scoring engine. Every point in a score comes from a
+/// named factor with a plain-language detail, so explanations are derived from the
+/// computation itself rather than re-inferred afterwards.
 /// </summary>
 public class ScoringEngine : IScoringEngine
 {
@@ -17,233 +19,149 @@ public class ScoringEngine : IScoringEngine
     {
         _logger = logger;
     }
-    /// <summary>
-    /// Calculates a personalized score for a class based on user profile and interaction history
-    /// </summary>
-    /// <param name="user">User requesting recommendations</param>
-    /// <param name="classItem">Class to score</param>
-    /// <param name="userInteractions">User's interaction history for pattern analysis</param>
-    /// <returns>Score between 0 and ~150 (higher is better)</returns>
-    public double CalculateScore(User user, Class classItem, List<Interaction> userInteractions)
+
+    /// <inheritdoc />
+    public double CalculateScore(User user, Class classItem, List<Interaction> userInteractions) =>
+        Explain(user, classItem, ScoringHistory.From(userInteractions)).Total;
+
+    /// <inheritdoc />
+    public ScoreBreakdown Explain(User user, Class classItem, ScoringHistory history) =>
+        new(new[]
+        {
+            FitnessLevel(user.FitnessLevel, classItem.Level),
+            ClassType(user.PreferredClassTypes, classItem.Type),
+            Instructor(classItem, history),
+            TimeOfDay(classItem.StartTime, history),
+            Rating(classItem.AverageRating),
+            Availability(classItem.Capacity, classItem.CurrentEnrollment),
+            ActivityProfile(user.Segment, classItem.Type, classItem.StartTime),
+            StartsSoon(classItem.StartTime),
+            Popularity(classItem.WeeklyBookings)
+        });
+
+    /// <summary>Factor 1 (up to 10): class difficulty versus the user's stated level.</summary>
+    private static ScoreFactor FitnessLevel(string userLevel, string classLevel)
     {
-        double score = 0;
-
-        // Factor 1: Fitness level match (weight: 10)
-        score += GetFitnessLevelScore(user.FitnessLevel, classItem.Level);
-
-        // Factor 2: Preferred class type (weight: 15)
-        score += GetClassTypeScore(user.PreferredClassTypes, classItem.Type);
-
-        // Factor 3: Favorite instructor (weight: 20)
-        score += GetInstructorScore(classItem.InstructorId, userInteractions);
-
-        // Factor 4: Time preference (weight: 8)
-        score += GetTimePreferenceScore(classItem.StartTime, userInteractions);
-
-        // Factor 5: Class rating (weight: rating × 2)
-        score += (double)classItem.AverageRating * 2;
-
-        // Factor 6: Availability bonus/penalty
-        score += GetAvailabilityScore(classItem.Capacity, classItem.CurrentEnrollment);
-
-        // Factor 7: Segment boost (weight: up to 12)
-        score += GetSegmentBoost(user.Segment, classItem.Type, classItem.StartTime);
-
-        // Factor 8: Recency bonus
-        score += GetRecencyBonus(classItem.StartTime);
-
-        // Factor 9: Popularity bonus
-        score += GetPopularityBonus(classItem.WeeklyBookings);
-
-        return Math.Max(0, score); // Never return negative score
+        var points = classLevel switch
+        {
+            "All Levels" => 10,
+            _ when userLevel == classLevel => 10,
+            "Beginner" when userLevel == "Intermediate" => 5,
+            "Beginner" when userLevel == "Advanced" => 3,
+            "Intermediate" when userLevel == "Advanced" => 5,
+            "Advanced" when userLevel == "Beginner" => 0,
+            _ => 3
+        };
+        var detail = points == 10
+            ? classLevel == "All Levels"
+                ? "Open to all levels"
+                : $"{classLevel} class matches your {userLevel} level"
+            : $"{classLevel} class for your {userLevel} level";
+        return new(ScoreFactorKeys.FitnessLevel, "Fitness level", points, detail);
     }
 
-    /// <summary>
-    /// Factor 1: Fitness Level Match (Weight: 10)
-    /// Ensures class difficulty aligns with user's fitness level
-    /// </summary>
-    private double GetFitnessLevelScore(string userLevel, string classLevel)
+    /// <summary>Factor 2 (15): the class type is one the user chose as a preference.</summary>
+    private ScoreFactor ClassType(string preferredTypesJson, string classType)
     {
-        if (classLevel == "All Levels")
-            return 10; // Always matches
-
-        if (userLevel == classLevel)
-            return 10; // Perfect match
-
-        if (userLevel == "Intermediate" && classLevel == "Beginner")
-            return 5; // Partial match (user can handle it)
-
-        if (userLevel == "Advanced" && classLevel == "Beginner")
-            return 3; // User can handle but may be too easy
-
-        if (userLevel == "Advanced" && classLevel == "Intermediate")
-            return 5;
-
-        if (userLevel == "Beginner" && classLevel == "Advanced")
-            return 0; // Too difficult
-
-        return 3; // Default partial match
-    }
-
-    /// <summary>
-    /// Factor 2: Preferred Class Type (Weight: 15)
-    /// Favors class types the user explicitly prefers
-    /// </summary>
-    private double GetClassTypeScore(string preferredTypesJson, string classType)
-    {
+        var preferred = false;
         try
         {
-            var preferredTypes = JsonSerializer.Deserialize<List<string>>(preferredTypesJson);
-            if (preferredTypes != null && preferredTypes.Contains(classType))
-                return 15;
+            preferred = JsonSerializer.Deserialize<List<string>>(preferredTypesJson ?? "[]")
+                ?.Contains(classType) == true;
         }
         catch (JsonException ex)
         {
             _logger.LogWarning(ex, "Failed to parse PreferredClassTypes JSON for scoring");
         }
 
-        return 0;
+        return preferred
+            ? new(ScoreFactorKeys.ClassType, "Preferred type", 15, $"{classType} is one of your preferred class types")
+            : new(ScoreFactorKeys.ClassType, "Preferred type", 0, $"{classType} is not in your preferred types");
     }
 
-    /// <summary>
-    /// Factor 3: Favorite Instructor (Weight: 20)
-    /// Prioritizes classes taught by instructors the user has completed classes with
-    /// Highest weight because instructor quality is a primary driver of satisfaction
-    /// </summary>
-    private double GetInstructorScore(string instructorId, List<Interaction> userInteractions)
+    /// <summary>Factor 3 (20): the user has completed two or more classes with this instructor.</summary>
+    private static ScoreFactor Instructor(Class classItem, ScoringHistory history)
     {
-        // Check if user has completed classes with this instructor
-        var completedWithInstructor = userInteractions
-            .Where(i => i.EventType == "Complete")
-            .Count(i =>
-            {
-                try
-                {
-                    if (string.IsNullOrEmpty(i.Metadata) || i.Metadata == "{}")
-                        return false;
-
-                    var metadata = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(i.Metadata);
-                    if (metadata != null && metadata.TryGetValue("instructorId", out var instructorIdElement))
-                    {
-                        return instructorIdElement.GetString() == instructorId;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to parse interaction metadata for instructor scoring");
-                }
-                return false;
-            });
-
-        // If user has completed 2+ classes with this instructor, consider them a favorite
-        if (completedWithInstructor >= 2)
-            return 20;
-
-        return 0;
+        var completed = history.CompletionsByInstructor.GetValueOrDefault(classItem.InstructorId);
+        return completed >= 2
+            ? new(ScoreFactorKeys.Instructor, "Instructor", 20,
+                $"You've completed {completed} classes with {classItem.InstructorName}")
+            : new(ScoreFactorKeys.Instructor, "Instructor", 0,
+                completed == 1
+                    ? $"You've completed 1 class with {classItem.InstructorName}"
+                    : $"No completed classes with {classItem.InstructorName} yet");
     }
 
-    /// <summary>
-    /// Factor 4: Time Preference (Weight: 8)
-    /// Recommends classes at times the user typically attends
-    /// </summary>
-    private double GetTimePreferenceScore(DateTime classStartTime, List<Interaction> userInteractions)
+    /// <summary>Factor 4 (up to 8): start time versus start times of classes the user booked.</summary>
+    private static ScoreFactor TimeOfDay(DateTime classStartTime, ScoringHistory history)
     {
-        // Analyze user's historical booking patterns
-        var bookingHours = userInteractions
-            .Where(i => i.EventType == "Book")
-            .Select(i => i.Timestamp.Hour)
-            .Distinct()
-            .ToList();
-
-        if (!bookingHours.Any())
-            return 0; // No booking history
-
-        var classHour = classStartTime.Hour;
-
-        // Exact match
-        if (bookingHours.Contains(classHour))
-            return 8;
-
-        // Within 1 hour of typical booking time
-        if (bookingHours.Any(h => Math.Abs(h - classHour) <= 1))
-            return 4;
-
-        return 0;
+        var hour = classStartTime.Hour;
+        var time = classStartTime.ToString("h tt", CultureInfo.InvariantCulture) + " UTC";
+        if (history.BookedStartHoursUtc.Count == 0)
+            return new(ScoreFactorKeys.TimeOfDay, "Time of day", 0, "No booking history to compare times");
+        if (history.BookedStartHoursUtc.Contains(hour))
+            return new(ScoreFactorKeys.TimeOfDay, "Time of day", 8, $"Starts at {time}, when classes you booked started");
+        if (history.BookedStartHoursUtc.Any(booked => Math.Abs(booked - hour) <= 1))
+            return new(ScoreFactorKeys.TimeOfDay, "Time of day", 4, $"Starts at {time}, within an hour of classes you booked");
+        return new(ScoreFactorKeys.TimeOfDay, "Time of day", 0, $"Starts at {time}, outside your usual booking times");
     }
 
-    /// <summary>
-    /// Factor 6: Availability Bonus/Penalty
-    /// Penalizes nearly-full classes to avoid booking failures
-    /// </summary>
-    private double GetAvailabilityScore(int capacity, int currentEnrollment)
+    /// <summary>Factor 5 (rating × 2): average member rating.</summary>
+    private static ScoreFactor Rating(decimal averageRating) =>
+        new(ScoreFactorKeys.Rating, "Rating", (double)averageRating * 2,
+            $"Rated {averageRating.ToString("0.0", CultureInfo.InvariantCulture)} out of 5");
+
+    /// <summary>Factor 6 (−5 to +3): steer away from nearly-full classes.</summary>
+    private static ScoreFactor Availability(int capacity, int currentEnrollment)
     {
         if (capacity == 0)
-            return 0;
-
-        var availableSpots = capacity - currentEnrollment;
-        var availabilityRatio = (double)availableSpots / capacity;
-
-        if (availabilityRatio < 0.2) // Less than 20% spots available
-            return -5;
-
-        if (availabilityRatio > 0.8) // More than 80% spots available
-            return 3;
-
-        return 0; // Normal availability
+            return new(ScoreFactorKeys.Availability, "Availability", 0, "Capacity not set");
+        var open = capacity - currentEnrollment;
+        var ratio = (double)open / capacity;
+        var points = ratio < 0.2 ? -5 : ratio > 0.8 ? 3 : 0;
+        var detail = open <= 0 ? "Class is full" : $"{open} of {capacity} spots open";
+        return new(ScoreFactorKeys.Availability, "Availability", points, detail);
     }
 
     /// <summary>
-    /// Factor 7: Segment Boost (Weight: up to 12)
-    /// Applies behavior-based personalization
+    /// Factor 7 (up to 12): a rule keyed on the user's activity segment. Segments are
+    /// assigned by the profiler from the user's own history; this is a fixed rule,
+    /// not a measurement of what similar members book.
     /// </summary>
-    private double GetSegmentBoost(string? segment, string classType, DateTime classStartTime)
+    private static ScoreFactor ActivityProfile(string? segment, string classType, DateTime classStartTime)
     {
-        if (string.IsNullOrEmpty(segment))
-            return 0;
-
-        var isWeekend = classStartTime.DayOfWeek == DayOfWeek.Saturday ||
-                       classStartTime.DayOfWeek == DayOfWeek.Sunday;
-
-        return segment switch
+        var isWeekend = classStartTime.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
+        var (points, description) = segment switch
         {
-            "YogaEnthusiast" when classType == "Yoga" => 12,
-            "StrengthTrainer" when classType == "HIIT" || classType == "Strength" => 12,
-            "CardioLover" when classType == "Spin" || classType == "Running" || classType == "Cardio" => 12,
-            "HighlyActive" => 5, // General boost for all types
-            "WeekendWarrior" when isWeekend => 10,
-            _ => 0
+            "YogaEnthusiast" when classType == "Yoga" => (12, "yoga-focused"),
+            "StrengthTrainer" when classType is "HIIT" or "Strength" => (12, "strength-focused"),
+            "CardioLover" when classType is "Spin" or "Running" or "Cardio" => (12, "cardio-focused"),
+            "HighlyActive" => (5, "highly active"),
+            "WeekendWarrior" when isWeekend => (10, "weekend"),
+            _ => (0, null as string)
         };
+        return description == null
+            ? new(ScoreFactorKeys.ActivityProfile, "Activity profile", 0,
+                string.IsNullOrEmpty(segment) ? "No activity profile yet" : "No profile rule applies")
+            : new(ScoreFactorKeys.ActivityProfile, "Activity profile", points,
+                $"Fits your {description} activity profile");
     }
 
-    /// <summary>
-    /// Factor 8: Recency Bonus
-    /// Slightly favors classes happening sooner
-    /// </summary>
-    private double GetRecencyBonus(DateTime classStartTime)
+    /// <summary>Factor 8 (up to 5): slightly favour classes happening sooner.</summary>
+    private static ScoreFactor StartsSoon(DateTime classStartTime)
     {
-        var daysUntilClass = (classStartTime - DateTime.UtcNow).TotalDays;
-
-        if (daysUntilClass <= 1)
-            return 5; // Happening within 24 hours
-
-        if (daysUntilClass <= 3)
-            return 3; // Happening within 3 days
-
-        return 0;
+        var days = (classStartTime - DateTime.UtcNow).TotalDays;
+        return days <= 1
+            ? new(ScoreFactorKeys.StartsSoon, "Starts soon", 5, "Starts within 24 hours")
+            : days <= 3
+                ? new(ScoreFactorKeys.StartsSoon, "Starts soon", 3, "Starts within 3 days")
+                : new(ScoreFactorKeys.StartsSoon, "Starts soon", 0, "More than 3 days away");
     }
 
-    /// <summary>
-    /// Factor 9: Popularity Bonus
-    /// Surfaces trending classes
-    /// </summary>
-    private double GetPopularityBonus(int weeklyBookings)
+    /// <summary>Factor 9 (up to 8): bookings across all members this week.</summary>
+    private static ScoreFactor Popularity(int weeklyBookings)
     {
-        if (weeklyBookings > 50)
-            return 8;
-
-        if (weeklyBookings > 20)
-            return 4;
-
-        return 0;
+        var points = weeklyBookings > 50 ? 8 : weeklyBookings > 20 ? 4 : 0;
+        return new(ScoreFactorKeys.Popularity, "Popularity", points, $"{weeklyBookings} bookings this week");
     }
 }

@@ -33,6 +33,12 @@ public class Recommendation
     /// Human-readable explanation: "Based on your love for Yoga and instructor preference"
     /// </summary>
     public string Reason { get; set; } = string.Empty;
+
+    /// <summary>
+    /// JSON array of <see cref="ScoreFactor"/> values that produced <see cref="Score"/>,
+    /// so persisted recommendations stay explainable without rescoring.
+    /// </summary>
+    public string FactorsJson { get; set; } = "[]";
     
     /// <summary>
     /// Timestamp when this recommendation was generated

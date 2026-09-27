@@ -102,11 +102,15 @@ The scorer combines nine explicit factors:
 | Preferred class type | 15 | Member-selected preferences |
 | Segment alignment | 12 | Behavior-derived member segment |
 | Fitness-level match | 10 | Class/member difficulty alignment |
-| Time preference | 8 | Historical booking hours |
+| Time preference | 8 | Start hours of classes the member booked |
 | Popularity | Up to 8 | Recent class demand |
 | Recency | Up to 5 | Time until class starts |
 | Availability | -5 to +3 | Remaining-capacity pressure |
 | Class rating | Rating x 2 | Aggregate member rating |
+
+Each recommendation carries the full factor breakdown, and its one-line reason is
+generated only from factors that scored. See
+[Recommendation model](public-docs/Recommendations.md).
 
 These weights are product rules, not learned parameters. Performance values
 described elsewhere in the repository are targets unless accompanied by a

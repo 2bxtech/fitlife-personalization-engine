@@ -124,8 +124,13 @@ public class RecommendationService : IRecommendationService
                 return new List<RecommendationDto>();
             }
 
-            // Get user's interaction history
+            // Get user's interaction history and the classes it refers to, so history
+            // facts (instructor, start time) come from the classes themselves.
             var userInteractions = await _interactionRepository.GetRecentByUserIdAsync(userId, days: 90);
+            var historyClasses = (await _classRepository.GetByIdsAsync(
+                    userInteractions.Select(interaction => interaction.ItemId).Distinct()))
+                .ToDictionary(classItem => classItem.Id);
+            var history = ScoringHistory.From(userInteractions, historyClasses);
 
             // Get candidate classes (upcoming, active, not full)
             var candidates = (await _classRepository.GetUpcomingClassesAsync(limit: 100)).ToList();
@@ -139,16 +144,15 @@ public class RecommendationService : IRecommendationService
             _logger.LogDebug("Scoring {Count} candidate classes for user {UserId}", candidates.Count, userId);
 
             // Score each candidate class
-            var scoredClasses = new List<(Class Class, double Score)>();
-            foreach (var classItem in candidates)
-            {
-                var score = _scoringEngine.CalculateScore(user, classItem, userInteractions);
-                scoredClasses.Add((classItem, score));
-            }
+            var scoredClasses = candidates
+                .Select(classItem => (Class: classItem, Breakdown: _scoringEngine.Explain(user, classItem, history)))
+                .ToList();
 
-            // Sort by score and take top N
+            // Sort by score (ties broken by start time, then id, for stable demo ordering)
             var topRecommendations = scoredClasses
-                .OrderByDescending(x => x.Score)
+                .OrderByDescending(x => x.Breakdown.Total)
+                .ThenBy(x => x.Class.StartTime)
+                .ThenBy(x => x.Class.Id, StringComparer.Ordinal)
                 .Take(limit)
                 .ToList();
 
@@ -160,14 +164,14 @@ public class RecommendationService : IRecommendationService
                     recommendation.Class.Id));
             for (int i = 0; i < topRecommendations.Count; i++)
             {
-                var (classItem, score) = topRecommendations[i];
-                var reason = GenerateExplanation(user, classItem, score, userInteractions);
+                var (classItem, breakdown) = topRecommendations[i];
 
                 recommendations.Add(new RecommendationDto
                 {
                     Rank = i + 1,
-                    Score = Math.Round(score, 2),
-                    Reason = reason,
+                    Score = Math.Round(breakdown.Total, 2),
+                    Reason = RecommendationReasons.Compose(breakdown.Factors),
+                    Factors = breakdown.Factors.ToList(),
                     Class = DtoMappers.MapToClassDto(
                         classItem,
                         activeClassIds.Contains(classItem.Id)),
@@ -199,72 +203,6 @@ public class RecommendationService : IRecommendationService
     }
 
     /// <summary>
-    /// Generates a human-readable explanation for why a class was recommended
-    /// </summary>
-    private string GenerateExplanation(User user, Class classItem, double score, List<Interaction> userInteractions)
-    {
-        var reasons = new List<string>();
-
-        // Check preferred class types
-        try
-        {
-            var preferredTypes = JsonSerializer.Deserialize<List<string>>(user.PreferredClassTypes ?? "[]");
-            if (preferredTypes?.Contains(classItem.Type) == true)
-            {
-                reasons.Add($"you love {classItem.Type} classes");
-            }
-        }
-        catch { }
-
-        // Check favorite instructors (has completed classes with this instructor)
-        var completedWithInstructor = userInteractions
-            .Count(i => i.EventType == "Complete" && 
-                       i.Metadata.Contains($"\"instructorId\":\"{classItem.InstructorId}\""));
-        
-        if (completedWithInstructor >= 2)
-        {
-            reasons.Add($"you enjoy classes with {classItem.InstructorName}");
-        }
-
-        // High rating
-        if (classItem.AverageRating >= 4.7m)
-        {
-            reasons.Add("this class has excellent reviews");
-        }
-
-        // Segment-based
-        if (!string.IsNullOrEmpty(user.Segment) && user.Segment != "General")
-        {
-            reasons.Add($"popular among {user.Segment} members like you");
-        }
-
-        // Trending
-        if (classItem.WeeklyBookings > 50)
-        {
-            reasons.Add("trending this week");
-        }
-
-        // Time preference
-        var bookingHours = userInteractions
-            .Where(i => i.EventType == "Book")
-            .Select(i => i.Timestamp.Hour)
-            .Distinct()
-            .ToList();
-        
-        if (bookingHours.Contains(classItem.StartTime.Hour))
-        {
-            reasons.Add("at your preferred time");
-        }
-
-        if (!reasons.Any())
-        {
-            return "Recommended based on your activity";
-        }
-
-        return $"Because {string.Join(" and ", reasons)}";
-    }
-
-    /// <summary>
     /// Saves recommendations to database for persistence
     /// </summary>
     private async Task SaveRecommendationsToDatabaseAsync(string userId, List<RecommendationDto> recommendationDtos)
@@ -276,6 +214,7 @@ public class RecommendationService : IRecommendationService
             Score = (decimal)dto.Score,
             Rank = dto.Rank,
             Reason = dto.Reason,
+            FactorsJson = ScoreBreakdown.Serialize(dto.Factors),
             GeneratedAt = dto.GeneratedAt
         }).ToList();
 
@@ -310,6 +249,7 @@ public class RecommendationService : IRecommendationService
                     Rank = rec.Rank,
                     Score = (double)rec.Score,
                     Reason = rec.Reason,
+                    Factors = ScoreBreakdown.Deserialize(rec.FactorsJson).ToList(),
                     Class = DtoMappers.MapToClassDto(
                         classItem,
                         activeClassIds.Contains(classItem.Id)),
@@ -340,7 +280,7 @@ public class RecommendationService : IRecommendationService
         {
             Rank = index + 1,
             Score = 50.0, // Default score for fallback
-            Reason = "Popular class this week",
+            Reason = "Popular this week. Personalized scoring was unavailable.",
             Class = DtoMappers.MapToClassDto(
                 c,
                 activeClassIds.Contains(c.Id)),
