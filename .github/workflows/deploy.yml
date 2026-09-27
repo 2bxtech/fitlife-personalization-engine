@@ -58,7 +58,8 @@ jobs:
         set -o pipefail
         dotnet test --no-build --verbosity normal --configuration Release | tee test-output.log
         # SQL-gated tests skip when the connection is missing; in CI that is a failure.
-        if ! grep -Eq 'Skipped: +0,' test-output.log; then
+        # 'normal' verbosity lists each skipped test and a 'Skipped: N' summary line.
+        if grep -Eq '^[[:space:]]*Skipped[[:space:]:]' test-output.log; then
           echo "::error::Backend tests were skipped; the SQL Server service was not used."
           exit 1
         fi
