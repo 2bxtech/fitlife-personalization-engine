@@ -181,4 +181,24 @@ describe('useRecommendationStore', () => {
     expect(store.recommendations[0]!.class.isBookedByCurrentUser).toBe(true)
     expect(store.recommendations[0]!.class.currentEnrollment).toBe(16)
   })
+
+  it('does not queue a view again while its batch is still being sent', async () => {
+    vi.useFakeTimers()
+    sessionStorage.clear()
+    const { recommendationService } = await import('@/services/recommendationService')
+    let finish!: () => void
+    vi.mocked(recommendationService.trackBatchEvents).mockImplementationOnce(
+      () => new Promise((resolve) => (finish = () => resolve()))
+    )
+    const store = useRecommendationStore()
+
+    store.trackView('u1', 'a', 'recommendation')
+    await vi.advanceTimersByTimeAsync(2000)
+    store.trackView('u1', 'a', 'browse') // navigated while the first send is in flight
+    finish()
+    await vi.runAllTimersAsync()
+
+    expect(recommendationService.trackBatchEvents).toHaveBeenCalledTimes(1)
+    vi.useRealTimers()
+  })
 })

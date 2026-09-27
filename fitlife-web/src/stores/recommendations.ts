@@ -63,10 +63,13 @@ export const useRecommendationStore = defineStore('recommendations', () => {
   // View tracking is batched: rendering a page of cards must not fire one request
   // per card (that exceeded the API's per-IP rate limit).
   const pendingViews = new Map<string, UserEvent>()
+  // Views being sent right now; a class is marked tracked only once its send succeeds.
+  const sendingViews = new Set<string>()
   let flushTimer: ReturnType<typeof setTimeout> | null = null
 
   function trackView(userId: string, classId: string, source: string) {
-    if (sessionStorage.getItem(viewKey(userId, classId)) || pendingViews.has(classId)) return
+    const key = viewKey(userId, classId)
+    if (sessionStorage.getItem(key) || pendingViews.has(classId) || sendingViews.has(key)) return
     pendingViews.set(classId, {
       userId,
       itemId: classId,
@@ -83,12 +86,16 @@ export const useRecommendationStore = defineStore('recommendations', () => {
     events.forEach((event) => pendingViews.delete(event.itemId))
     if (pendingViews.size > 0) flushTimer = setTimeout(flushViews, VIEW_FLUSH_MS)
     if (events.length === 0) return
+    const keys = events.map((event) => viewKey(event.userId, event.itemId))
+    keys.forEach((key) => sendingViews.add(key))
     try {
       await recommendationService.trackBatchEvents(events)
-      events.forEach((event) => sessionStorage.setItem(viewKey(event.userId, event.itemId), '1'))
+      keys.forEach((key) => sessionStorage.setItem(key, '1'))
     } catch (e: unknown) {
       // Tracking must never interrupt the member's flow; unsent views may be retried later.
       console.warn('View tracking failed', e)
+    } finally {
+      keys.forEach((key) => sendingViews.delete(key))
     }
   }
 
