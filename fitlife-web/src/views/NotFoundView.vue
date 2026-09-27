@@ -7,7 +7,7 @@ const router = useRouter()
 <template>
   <div class="min-h-screen bg-gray-50 flex items-center justify-center">
     <div class="text-center px-6">
-      <h1 class="text-6xl font-bold text-primary-600 mb-4">404</h1>
+      <h1 class="text-6xl font-bold text-primary-700 mb-4">404</h1>
       <h2 class="text-2xl font-semibold text-gray-800 mb-2">Page Not Found</h2>
       <p class="text-gray-600 mb-8">
         The page you're looking for doesn't exist or has been moved.
@@ -21,7 +21,7 @@ const router = useRouter()
         </button>
         <router-link
           to="/"
-          class="px-6 py-3 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+          class="px-6 py-3 bg-primary-700 text-white rounded-lg hover:bg-primary-800 transition-colors"
         >
           Home
         </router-link>

@@ -41,6 +41,10 @@ export default tseslint.config(
   },
   {
     rules: {
+      // TypeScript already reports undefined identifiers, and no-undef cannot see
+      // DOM types (HTMLElement) used in annotations. typescript-eslint recommends
+      // disabling it for TypeScript sources.
+      'no-undef': 'off',
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
       'vue/multi-word-component-names': 'off',

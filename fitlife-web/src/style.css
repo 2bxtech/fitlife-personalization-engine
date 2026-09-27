@@ -1,26 +1,70 @@
 @import "tailwindcss";
-@config "../tailwind.config.js";
 
-:root {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
+/*
+ * Design tokens. Tailwind v4 generates utilities from these (bg-primary-700,
+ * text-accent-800, ...). Text and fills that carry meaning use the 700+ shades,
+ * which meet WCAG AA contrast (4.5:1) against white.
+ */
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  --color-primary-50: #f0fdfa;
+  --color-primary-100: #ccfbf1;
+  --color-primary-200: #99f6e4;
+  --color-primary-300: #5eead4;
+  --color-primary-400: #2dd4bf;
+  --color-primary-500: #14b8a6;
+  --color-primary-600: #0d9488;
+  --color-primary-700: #0f766e;
+  --color-primary-800: #115e59;
+  --color-primary-900: #134e4a;
+  --color-primary-950: #042f2e;
+
+  --color-accent-50: #fffbeb;
+  --color-accent-100: #fef3c7;
+  --color-accent-200: #fde68a;
+  --color-accent-500: #f59e0b;
+  --color-accent-700: #b45309;
+  --color-accent-800: #92400e;
+  --color-accent-900: #78350f;
 }
 
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
+/*
+ * Base styles live in the base layer so Tailwind utilities (a later layer) always
+ * win. An unlayered `* { margin: 0; padding: 0 }` previously overrode every
+ * spacing utility in the app; Tailwind's preflight already provides the reset.
+ */
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
 
-body {
-  margin: 0;
-  min-width: 320px;
-  min-height: 100vh;
-}
+  body {
+    min-width: 320px;
+    background-color: var(--color-slate-50);
+    color: var(--color-slate-900);
+  }
 
-#app {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
+  #app {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-primary-700);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 }

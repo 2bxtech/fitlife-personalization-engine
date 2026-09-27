@@ -59,19 +59,19 @@ async function refreshRecommendations() {
       <!-- User Stats -->
       <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div class="bg-white rounded-lg shadow-md p-6">
-          <div class="text-primary-600 text-3xl mb-2">🎯</div>
+          <div class="text-primary-700 text-3xl mb-2">🎯</div>
           <h3 class="text-lg font-semibold text-gray-700">Fitness Level</h3>
           <p class="text-2xl font-bold text-gray-900">{{ authStore.user?.fitnessLevel }}</p>
         </div>
         
         <div class="bg-white rounded-lg shadow-md p-6">
-          <div class="text-primary-600 text-3xl mb-2">⭐</div>
+          <div class="text-primary-700 text-3xl mb-2">⭐</div>
           <h3 class="text-lg font-semibold text-gray-700">Segment</h3>
           <p class="text-2xl font-bold text-gray-900">{{ authStore.user?.segment || 'General' }}</p>
         </div>
         
         <div class="bg-white rounded-lg shadow-md p-6">
-          <div class="text-primary-600 text-3xl mb-2">💪</div>
+          <div class="text-primary-700 text-3xl mb-2">💪</div>
           <h3 class="text-lg font-semibold text-gray-700">Preferred Classes</h3>
           <p class="text-sm text-gray-600">{{ authStore.user?.preferredClassTypes.join(', ') || 'None set' }}</p>
         </div>

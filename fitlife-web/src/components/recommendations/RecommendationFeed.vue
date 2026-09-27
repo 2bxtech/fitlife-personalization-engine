@@ -41,7 +41,7 @@ function handleCancel(classId: string) {
       <h2 class="text-2xl font-bold text-gray-800">Recommended For You</h2>
       <button 
         :disabled="recommendationStore.loading" 
-        class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:bg-gray-300 transition-colors"
+        class="px-4 py-2 bg-primary-700 text-white rounded-lg hover:bg-primary-800 disabled:bg-gray-300 transition-colors"
         @click="handleRefresh"
       >
         {{ recommendationStore.loading ? 'Refreshing...' : 'Refresh' }}

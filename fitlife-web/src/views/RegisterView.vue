@@ -85,7 +85,7 @@ async function handleRegister() {
         </h2>
         <p class="mt-2 text-sm text-gray-600">
           Already have an account?
-          <router-link to="/login" class="font-medium text-primary-600 hover:text-primary-500">
+          <router-link to="/login" class="font-medium text-primary-700 hover:text-primary-800">
             Sign in
           </router-link>
         </p>
@@ -193,7 +193,7 @@ async function handleRegister() {
               :class="[
                 'px-4 py-2 rounded-lg border transition-colors',
                 formData.goals.includes(goal)
-                  ? 'bg-primary-600 text-white border-primary-600'
+                  ? 'bg-primary-700 text-white border-primary-700'
                   : 'bg-white text-gray-700 border-gray-300 hover:border-primary-500'
               ]"
               @click="toggleGoal(goal)"
@@ -215,7 +215,7 @@ async function handleRegister() {
               :class="[
                 'px-4 py-2 rounded-lg border transition-colors',
                 formData.preferredClassTypes.includes(type)
-                  ? 'bg-primary-600 text-white border-primary-600'
+                  ? 'bg-primary-700 text-white border-primary-700'
                   : 'bg-white text-gray-700 border-gray-300 hover:border-primary-500'
               ]"
               @click="toggleClassType(type)"
@@ -228,7 +228,7 @@ async function handleRegister() {
         <button
           type="submit"
           :disabled="loading"
-          class="w-full py-3 px-4 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+          class="w-full py-3 px-4 bg-primary-700 text-white font-medium rounded-lg hover:bg-primary-800 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
         >
           {{ loading ? 'Creating account...' : 'Create account' }}
         </button>
