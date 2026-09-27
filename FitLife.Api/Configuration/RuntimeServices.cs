@@ -1,4 +1,5 @@
 using FitLife.Api.Events;
+using FitLife.Api.Observability;
 using FitLife.Core.Interfaces;
 using FitLife.Core.Services;
 using FitLife.Infrastructure.Cache;
@@ -37,6 +38,9 @@ public static class RuntimeServices
         services.AddScoped<IInteractionRepository, InteractionRepository>();
         services.AddScoped<IRecommendationRepository, RecommendationRepository>();
         services.AddScoped<IBookingService, BookingService>();
+
+        services.AddMetrics();
+        services.AddSingleton<FitLifeMetrics>();
 
         // Register core services
         services.AddScoped<IScoringEngine, ScoringEngine>();

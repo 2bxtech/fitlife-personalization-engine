@@ -40,7 +40,8 @@ and project files, excluding private workspace data and local build output.
 `docker compose up -d --build` configures API, consumer, and scheduler containers.
 Workers wait for API readiness, which follows local startup migrations. The image
 HTTP health check is disabled for worker containers because they have no HTTP
-listener. Process exit status and logs are their current operational signals.
+listener. Process exit status, logs, and the metrics below are their operational
+signals.
 
 ## Kafka-free minimal demo
 
@@ -107,6 +108,31 @@ can still be terminated by orchestration and retried on restart.
 The profiler saves changed segments before invalidating recommendations. A failed
 save does not invalidate the cache. Cache invalidation recovery after a successful
 save remains a separate reliability concern.
+
+## Operational signals
+
+**Verified in tests:** every role publishes counters on the `FitLife` meter
+(`System.Diagnostics.Metrics`). Tests observe per-test meter instances and cover
+publish (both transports), recorded, retry, dead-letter, and the recommendation
+generator's run, duration, and user counts; they fail when emission is removed.
+The user profiler uses the same `WorkerRun` wrapper but has no dedicated metric test. **Not configured:** no exporter is wired, so
+nothing collects these values until deployment adds OpenTelemetry or
+`dotnet-counters` is attached.
+
+| Instrument | Tags | Emitted by |
+|---|---|---|
+| `fitlife.events.published` | `transport` (kafka, direct), `outcome` | API event endpoints |
+| `fitlife.events.recorded` | `outcome` (stored, duplicate) | Consumer and Direct transport |
+| `fitlife.events.retries` | none | Consumer, per failed attempt that is retried |
+| `fitlife.events.dead_lettered` | `disposition` | Consumer, after the DLQ publish succeeds |
+| `fitlife.worker.runs` | `worker`, `outcome` (success, failure, cancelled) | Scheduler batches |
+| `fitlife.worker.run.duration` (s) | `worker`, `outcome` | Scheduler batches |
+| `fitlife.worker.users` | `worker`, `outcome` | Users processed per batch |
+
+Scheduler logs record `Worker run started/finished/failed` with the owning
+`host/process-id`, which identifies the process that owns scheduled work.
+Consumer lag is not measured; broker-side tooling (`kafka-consumer-groups`)
+remains the source for it.
 
 ## Deployment status
 
