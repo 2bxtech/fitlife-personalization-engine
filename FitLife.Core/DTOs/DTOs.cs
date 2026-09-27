@@ -1,3 +1,4 @@
+using FitLife.Core.Models;
 using System.ComponentModel.DataAnnotations;
 
 namespace FitLife.Core.DTOs;
@@ -85,6 +86,10 @@ public class RecommendationDto
     public int Rank { get; set; }
     public double Score { get; set; }
     public string Reason { get; set; } = string.Empty;
+
+    /// <summary>Every scoring factor and its contribution; empty for fallback results.</summary>
+    public List<ScoreFactor> Factors { get; set; } = new();
+
     public ClassDto Class { get; set; } = null!;
     public DateTime GeneratedAt { get; set; }
 }
