@@ -1,6 +1,6 @@
 import api from './api'
 import type { Recommendation } from '@/types/Recommendation'
-import type { UserEvent, BatchEventsRequest } from '@/types/Event'
+import type { UserEvent } from '@/types/Event'
 
 export const recommendationService = {
   async getRecommendations(userId: string, limit: number = 10): Promise<Recommendation[]> {
@@ -22,7 +22,8 @@ export const recommendationService = {
     await api.post('/events', event)
   },
 
+  /** The API binds the batch body as a bare array of events (max 100). */
   async trackBatchEvents(events: UserEvent[]): Promise<void> {
-    await api.post<BatchEventsRequest>('/events/batch', { events })
+    await api.post('/events/batch', events)
   },
 }

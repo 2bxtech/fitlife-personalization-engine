@@ -18,9 +18,10 @@ const memberLinks = [
 ]
 
 function handleLogout() {
+  const wasDemo = authStore.personaId !== null
   authStore.logout()
   menuOpen.value = false
-  router.push('/login')
+  router.push(wasDemo ? '/' : '/login')
 }
 
 // Close the mobile menu on navigation and on Escape, returning focus to its toggle.
@@ -59,7 +60,7 @@ onKeyStroke('Escape', () => {
         </template>
         <template v-else>
           <AppButton variant="ghost" size="sm" to="/login">Sign in</AppButton>
-          <AppButton size="sm" to="/register">Create account</AppButton>
+          <AppButton size="sm" :to="{ path: '/', hash: '#personas' }">Try the demo</AppButton>
         </template>
       </div>
 
@@ -95,7 +96,7 @@ onKeyStroke('Escape', () => {
         </button>
       </template>
       <template v-else>
-        <router-link to="/register" class="block rounded-lg px-3 py-2 font-medium text-primary-800 hover:bg-primary-50">Create account</router-link>
+        <router-link :to="{ path: '/', hash: '#personas' }" class="block rounded-lg px-3 py-2 font-medium text-primary-800 hover:bg-primary-50">Try the demo</router-link>
         <router-link to="/login" class="block rounded-lg px-3 py-2 font-medium text-slate-700 hover:bg-slate-100">Sign in</router-link>
       </template>
     </div>

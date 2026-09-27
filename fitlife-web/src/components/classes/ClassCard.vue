@@ -3,141 +3,69 @@ import { computed, onMounted } from 'vue'
 import type { Class } from '@/types/Class'
 import { useRecommendationStore } from '@/stores/recommendations'
 import { useAuthStore } from '@/stores/auth'
+import AppButton from '@/components/ui/AppButton.vue'
+import { formatClassTime, spotsLeft } from '@/utils/format'
 
-const props = defineProps<{
-  classData: Class
-  showRecommendationReason?: boolean
-  recommendationReason?: string
-  actionPending?: boolean
-}>()
-
-const emit = defineEmits<{
-  book: [classId: string]
-  cancel: [classId: string]
-}>()
+const props = defineProps<{ classData: Class; pending?: boolean }>()
+const emit = defineEmits<{ book: [classId: string]; cancel: [classId: string] }>()
 
 const authStore = useAuthStore()
 const recommendationStore = useRecommendationStore()
 
-const availabilityPercent = computed(() => 
-  ((props.classData.capacity - props.classData.currentEnrollment) / props.classData.capacity) * 100
+const left = computed(() => spotsLeft(props.classData.capacity, props.classData.currentEnrollment))
+const full = computed(() => left.value === 0 && !props.classData.isBookedByCurrentUser)
+const rating = computed(() =>
+  props.classData.averageRating > 0 ? `${props.classData.averageRating.toFixed(1)} / 5` : 'No ratings yet'
 )
 
-const availabilityColor = computed(() => {
-  if (availabilityPercent.value < 20) return 'text-red-600'
-  if (availabilityPercent.value < 50) return 'text-yellow-600'
-  return 'text-green-600'
-})
-
-const formattedDate = computed(() => {
-  const date = new Date(props.classData.startTime)
-  return date.toLocaleDateString('en-US', { 
-    weekday: 'short', 
-    month: 'short', 
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit'
-  })
-})
-
-async function handleView() {
-  const viewedKey = `viewed_${props.classData.id}`
-  if (sessionStorage.getItem(viewedKey)) return
-  if (authStore.user) {
-    sessionStorage.setItem(viewedKey, '1')
-    await recommendationStore.trackEvent({
-      userId: authStore.user.id,
-      itemId: props.classData.id,
-      itemType: 'Class',
-      eventType: 'View',
-      metadata: { source: 'browse' }
-    })
-  }
-}
-
-function handleBookingAction() {
-  if (props.classData.isBookedByCurrentUser) {
-    emit('cancel', props.classData.id)
-    return
-  }
-
-  emit('book', props.classData.id)
-}
-
 onMounted(() => {
-  handleView()
+  // Batched by the store: a page of cards produces one tracking request.
+  if (authStore.user) recommendationStore.trackView(authStore.user.id, props.classData.id, 'browse')
 })
 </script>
 
 <template>
-  <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow">
-    <div class="flex justify-between items-start mb-4">
+  <article class="flex flex-col rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+    <div class="flex items-start justify-between gap-3">
       <div>
-        <h3 class="text-xl font-bold text-gray-800">{{ classData.name }}</h3>
-        <p class="text-gray-600 text-sm">{{ classData.instructorName }}</p>
+        <h3 class="font-semibold text-slate-900">{{ classData.name }}</h3>
+        <p class="text-sm text-slate-600">{{ classData.instructorName }}</p>
       </div>
-      <span class="px-3 py-1 bg-primary-100 text-primary-700 rounded-full text-sm font-semibold">
-        {{ classData.type }}
+      <span class="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">{{ classData.type }}</span>
+    </div>
+    <p class="mt-3 flex-1 text-sm text-slate-700">{{ classData.description }}</p>
+    <dl class="mt-4 grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+      <dt class="text-slate-500">When</dt>
+      <dd class="text-right font-medium text-slate-900">{{ formatClassTime(classData.startTime) }}</dd>
+      <dt class="text-slate-500">Level</dt>
+      <dd class="text-right font-medium text-slate-900">{{ classData.level }}</dd>
+      <dt class="text-slate-500">Rating</dt>
+      <dd class="text-right font-medium text-slate-900">{{ rating }}</dd>
+      <dt class="text-slate-500">Spots left</dt>
+      <dd class="text-right font-medium" :class="left <= 3 ? 'text-accent-800' : 'text-slate-900'">
+        {{ left }} of {{ classData.capacity }}
+      </dd>
+    </dl>
+    <div class="mt-4 flex items-center gap-2">
+      <span
+        v-if="classData.isBookedByCurrentUser"
+        class="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800"
+      >
+        Booked
       </span>
+      <AppButton
+        v-if="classData.isBookedByCurrentUser"
+        class="ml-auto"
+        variant="danger"
+        size="sm"
+        :loading="pending"
+        @click="emit('cancel', classData.id)"
+      >
+        {{ pending ? 'Cancelling…' : 'Cancel booking' }}
+      </AppButton>
+      <AppButton v-else class="ml-auto" size="sm" :loading="pending" :disabled="full" @click="emit('book', classData.id)">
+        {{ pending ? 'Booking…' : full ? 'Class full' : 'Book' }}
+      </AppButton>
     </div>
-
-    <p class="text-gray-700 mb-4 line-clamp-2">{{ classData.description }}</p>
-
-    <div class="grid grid-cols-2 gap-4 mb-4 text-sm">
-      <div>
-        <span class="text-gray-600">Level:</span>
-        <span class="ml-2 font-semibold">{{ classData.level }}</span>
-      </div>
-      <div>
-        <span class="text-gray-600">Rating:</span>
-        <span class="ml-2 font-semibold">{{ classData.averageRating.toFixed(1) }} ⭐</span>
-      </div>
-      <div>
-        <span class="text-gray-600">Date:</span>
-        <span class="ml-2 font-semibold">{{ formattedDate }}</span>
-      </div>
-      <div>
-        <span class="text-gray-600">Spots:</span>
-        <span :class="['ml-2 font-semibold', availabilityColor]">
-          {{ classData.capacity - classData.currentEnrollment }} / {{ classData.capacity }}
-        </span>
-      </div>
-    </div>
-
-    <div v-if="showRecommendationReason && recommendationReason" class="mb-4 p-3 bg-blue-50 rounded-lg">
-      <p class="text-sm text-blue-800">
-        <span class="font-semibold">Why recommended:</span> {{ recommendationReason }}
-      </p>
-    </div>
-
-    <button 
-      :disabled="actionPending || (!classData.isBookedByCurrentUser && classData.currentEnrollment >= classData.capacity)"
-      :class="[
-        'w-full px-4 py-2 text-white rounded-lg disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors',
-        classData.isBookedByCurrentUser
-          ? 'bg-red-600 hover:bg-red-700'
-          : 'bg-primary-700 hover:bg-primary-800'
-      ]"
-      @click="handleBookingAction"
-    >
-      {{
-        actionPending
-          ? 'Updating...'
-          : classData.isBookedByCurrentUser
-            ? 'Cancel Booking'
-            : classData.currentEnrollment >= classData.capacity
-              ? 'Class Full'
-              : 'Book Now'
-      }}
-    </button>
-  </div>
+  </article>
 </template>
-
-<style scoped>
-.line-clamp-2 {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-</style>

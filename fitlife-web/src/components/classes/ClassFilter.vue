@@ -1,26 +1,22 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import type { ClassFilter } from '@/types/Class'
+import AppButton from '@/components/ui/AppButton.vue'
 
-const emit = defineEmits<{
-  filter: [filters: ClassFilter]
-}>()
+const emit = defineEmits<{ filter: [filters: ClassFilter] }>()
 
-const filters = ref<ClassFilter>({
-  type: '',
-  level: '',
-  startDate: '',
-})
-
-const classTypes = ['Yoga', 'Spin', 'HIIT', 'Strength', 'Pilates', 'Boxing', 'Cardio']
-const levels = ['Beginner', 'Intermediate', 'Advanced']
+const filters = ref({ type: '', level: '', startDate: '' })
+const classTypes = ['Yoga', 'Pilates', 'HIIT', 'Strength', 'Spin', 'Walking']
+const levels = ['Beginner', 'Intermediate', 'Advanced', 'All Levels']
+const fieldClass =
+  'mt-1 block w-full rounded-lg border-0 bg-white px-3 py-2 text-sm text-slate-900 ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-primary-700'
 
 function applyFilters() {
-  const activeFilters: ClassFilter = {}
-  if (filters.value.type) activeFilters.type = filters.value.type
-  if (filters.value.level) activeFilters.level = filters.value.level
-  if (filters.value.startDate) activeFilters.startDate = filters.value.startDate
-  emit('filter', activeFilters)
+  const active: ClassFilter = {}
+  if (filters.value.type) active.type = filters.value.type
+  if (filters.value.level) active.level = filters.value.level
+  if (filters.value.startDate) active.startDate = filters.value.startDate
+  emit('filter', active)
 }
 
 function clearFilters() {
@@ -30,43 +26,31 @@ function clearFilters() {
 </script>
 
 <template>
-  <div class="bg-white rounded-lg shadow-md p-6 mb-6">
-    <h3 class="text-lg font-semibold mb-4">Filter Classes</h3>
-    
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+  <form class="rounded-2xl bg-white p-5 ring-1 ring-slate-200" aria-labelledby="filter-title" @submit.prevent="applyFilters">
+    <h2 id="filter-title" class="text-sm font-semibold text-slate-900">Filter classes</h2>
+    <div class="mt-3 grid gap-4 sm:grid-cols-3">
       <div>
-        <label class="block text-sm font-medium text-gray-700 mb-2">Class Type</label>
-        <select v-model="filters.type" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500">
-          <option value="">All Types</option>
+        <label for="filter-type" class="text-sm font-medium text-slate-700">Class type</label>
+        <select id="filter-type" v-model="filters.type" :class="fieldClass">
+          <option value="">All types</option>
           <option v-for="type in classTypes" :key="type" :value="type">{{ type }}</option>
         </select>
       </div>
-
       <div>
-        <label class="block text-sm font-medium text-gray-700 mb-2">Level</label>
-        <select v-model="filters.level" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500">
-          <option value="">All Levels</option>
-          <option v-for="lvl in levels" :key="lvl" :value="lvl">{{ lvl }}</option>
+        <label for="filter-level" class="text-sm font-medium text-slate-700">Level</label>
+        <select id="filter-level" v-model="filters.level" :class="fieldClass">
+          <option value="">Any level</option>
+          <option v-for="level in levels" :key="level" :value="level">{{ level }}</option>
         </select>
       </div>
-
       <div>
-        <label class="block text-sm font-medium text-gray-700 mb-2">Start Date</label>
-        <input 
-          v-model="filters.startDate" 
-          type="date" 
-          class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
-        />
+        <label for="filter-date" class="text-sm font-medium text-slate-700">On or after</label>
+        <input id="filter-date" v-model="filters.startDate" type="date" :class="fieldClass" />
       </div>
     </div>
-
-    <div class="flex space-x-4">
-      <button class="px-6 py-2 bg-primary-700 text-white rounded-lg hover:bg-primary-800 transition-colors" @click="applyFilters">
-        Apply Filters
-      </button>
-      <button class="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors" @click="clearFilters">
-        Clear
-      </button>
+    <div class="mt-4 flex gap-2">
+      <AppButton type="submit" size="sm">Apply filters</AppButton>
+      <AppButton variant="ghost" size="sm" @click="clearFilters">Clear</AppButton>
     </div>
-  </div>
+  </form>
 </template>

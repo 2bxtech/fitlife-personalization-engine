@@ -3,6 +3,11 @@ import { useAuthStore } from '@/stores/auth'
 
 export const router = createRouter({
   history: createWebHistory(),
+  scrollBehavior(to, _from, savedPosition) {
+    if (savedPosition) return savedPosition
+    if (to.hash) return { el: to.hash, top: 80 }
+    return { top: 0 }
+  },
   routes: [
     {
       path: '/',
@@ -62,14 +67,21 @@ router.afterEach((to) => {
 })
 
 // Navigation guards
-router.beforeEach((to, from, next) => {
+router.beforeEach((to) => {
   const authStore = useAuthStore()
 
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
-    next('/login')
-  } else if (to.meta.requiresGuest && authStore.isAuthenticated) {
-    next('/dashboard')
-  } else {
-    next()
+    return { path: '/login', query: { redirect: to.fullPath } }
   }
+  if (to.meta.requiresGuest && authStore.isAuthenticated) {
+    return '/dashboard'
+  }
+  return true
 })
+
+/** Only same-origin, in-app paths are valid post-login destinations. */
+export function safeRedirect(value: unknown): string {
+  return typeof value === 'string' && value.startsWith('/') && !value.startsWith('//')
+    ? value
+    : '/dashboard'
+}

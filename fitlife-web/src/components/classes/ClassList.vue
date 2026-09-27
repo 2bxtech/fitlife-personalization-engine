@@ -1,47 +1,34 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import ClassCard from './ClassCard.vue'
 import type { Class } from '@/types/Class'
 
-const props = defineProps<{
-  classes: Class[]
-  loading?: boolean
-  actionClassId?: string | null
-}>()
-
-const emit = defineEmits<{
-  book: [classId: string]
-  cancel: [classId: string]
-}>()
-
-const handleBook = (classId: string) => {
-  emit('book', classId)
-}
-
-const handleCancel = (classId: string) => {
-  emit('cancel', classId)
-}
+defineProps<{ classes: Class[]; loading?: boolean; isPending: (classId: string) => boolean }>()
+const emit = defineEmits<{ book: [classId: string]; cancel: [classId: string] }>()
 </script>
 
 <template>
   <div>
-    <div v-if="loading" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-      <div v-for="i in 6" :key="i" class="bg-gray-200 h-64 rounded-lg animate-pulse"></div>
+    <div
+      v-if="loading && classes.length === 0"
+      class="grid gap-4 md:grid-cols-2 lg:grid-cols-3"
+      aria-busy="true"
+      aria-label="Loading classes"
+    >
+      <div v-for="i in 6" :key="i" class="h-64 animate-pulse rounded-2xl bg-slate-200" />
     </div>
-
-    <div v-else-if="classes.length === 0" class="text-center py-12">
-      <p class="text-gray-600 text-lg">No classes found matching your criteria</p>
-    </div>
-
-    <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-      <ClassCard
-        v-for="classItem in classes"
-        :key="classItem.id"
-        :class-data="classItem"
-        :action-pending="actionClassId === classItem.id"
-        @book="handleBook"
-        @cancel="handleCancel"
-      />
-    </div>
+    <p v-else-if="classes.length === 0" class="rounded-2xl bg-white p-8 text-center text-slate-600 ring-1 ring-slate-200">
+      No classes match these filters.
+    </p>
+    <ul v-else class="grid gap-4 md:grid-cols-2 lg:grid-cols-3" :aria-busy="loading">
+      <li v-for="classItem in classes" :key="classItem.id" class="flex">
+        <ClassCard
+          class="w-full"
+          :class-data="classItem"
+          :pending="isPending(classItem.id)"
+          @book="emit('book', $event)"
+          @cancel="emit('cancel', $event)"
+        />
+      </li>
+    </ul>
   </div>
 </template>

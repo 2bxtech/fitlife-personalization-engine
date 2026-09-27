@@ -8,19 +8,25 @@ export const useClassStore = defineStore('classes', () => {
   const classes = ref<Class[]>([])
   const currentClass = ref<Class | null>(null)
   const loading = ref(false)
-  const actionClassId = ref<string | null>(null)
+  /** Classes with a booking or cancellation in flight; each card tracks its own. */
+  const pendingIds = ref<Set<string>>(new Set())
   const error = ref<string | null>(null)
 
+  // Filter changes can overlap; only the newest request may update the list.
+  let latestRequest = 0
+
   async function fetchClasses(filters?: ClassFilter) {
+    const request = ++latestRequest
     loading.value = true
     error.value = null
     try {
-      classes.value = await classService.getClasses(filters)
-    } catch (e: any) {
-      error.value = e.message || 'Failed to fetch classes'
+      const result = await classService.getClasses(filters)
+      if (request === latestRequest) classes.value = result
+    } catch (e: unknown) {
+      if (request === latestRequest) error.value = getErrorMessage(e, 'Failed to fetch classes')
       throw e
     } finally {
-      loading.value = false
+      if (request === latestRequest) loading.value = false
     }
   }
 
@@ -29,73 +35,80 @@ export const useClassStore = defineStore('classes', () => {
     error.value = null
     try {
       currentClass.value = await classService.getClassById(id)
-    } catch (e: any) {
-      error.value = e.message || 'Failed to fetch class'
+    } catch (e: unknown) {
+      error.value = getErrorMessage(e, 'Failed to fetch class')
       throw e
     } finally {
       loading.value = false
     }
   }
 
-  async function bookClass(classId: string) {
-    actionClassId.value = classId
-    error.value = null
+  function isPending(classId: string) {
+    return pendingIds.value.has(classId)
+  }
+
+  async function runAction(
+    classId: string,
+    action: (id: string) => Promise<{ classData: Class; message: string }>,
+    fallback: string
+  ) {
+    pendingIds.value = new Set(pendingIds.value).add(classId)
     try {
-      const result = await classService.bookClass(classId)
+      const result = await action(classId)
       updateClass(result.classData)
-      return result.message
+      return result
     } catch (e: unknown) {
-      error.value = getErrorMessage(e, 'Failed to book class')
-      throw Object.assign(new Error(error.value), { cause: e })
+      throw Object.assign(new Error(getErrorMessage(e, fallback)), { cause: e })
     } finally {
-      actionClassId.value = null
+      const next = new Set(pendingIds.value)
+      next.delete(classId)
+      pendingIds.value = next
     }
   }
 
-  async function cancelBooking(classId: string) {
-    actionClassId.value = classId
-    error.value = null
-    try {
-      const result = await classService.cancelBooking(classId)
-      updateClass(result.classData)
-      return result.message
-    } catch (e: unknown) {
-      error.value = getErrorMessage(e, 'Failed to cancel booking')
-      throw Object.assign(new Error(error.value), { cause: e })
-    } finally {
-      actionClassId.value = null
-    }
+  /** Books a class; resolves with the updated class and the API's message. */
+  function bookClass(classId: string) {
+    return runAction(classId, classService.bookClass, 'Failed to book class')
+  }
+
+  function cancelBooking(classId: string) {
+    return runAction(classId, classService.cancelBooking, 'Failed to cancel booking')
   }
 
   function updateClass(updatedClass: Class) {
-    const index = classes.value.findIndex(
-      classItem => classItem.id === updatedClass.id
-    )
+    const index = classes.value.findIndex((classItem) => classItem.id === updatedClass.id)
     if (index >= 0) classes.value[index] = updatedClass
-    if (currentClass.value?.id === updatedClass.id) {
-      currentClass.value = updatedClass
-    }
+    if (currentClass.value?.id === updatedClass.id) currentClass.value = updatedClass
   }
 
   function getErrorMessage(error: unknown, fallback: string) {
     if (axios.isAxiosError(error)) {
-      const responseMessage = (error.response?.data as { message?: string } | undefined)
-        ?.message
+      const responseMessage = (error.response?.data as { message?: string } | undefined)?.message
       if (responseMessage) return responseMessage
     }
-
     return error instanceof Error ? error.message : fallback
+  }
+
+  function reset() {
+    latestRequest++
+    classes.value = []
+    currentClass.value = null
+    loading.value = false
+    pendingIds.value = new Set()
+    error.value = null
   }
 
   return {
     classes,
     currentClass,
     loading,
-    actionClassId,
+    pendingIds,
     error,
     fetchClasses,
     fetchClassById,
+    isPending,
     bookClass,
     cancelBooking,
+    reset,
   }
 })
