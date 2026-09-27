@@ -53,8 +53,12 @@ test('a visitor explores two personas, reads the reasons, and books a class', as
   await page.getByTestId('switch-mike').click()
   await expect(page.getByRole('heading', { name: 'Recommended for Mike' })).toBeVisible()
   await expect(page.getByTestId('switch-mike')).toHaveAttribute('aria-pressed', 'true')
-  const mikeTop = await cards(page).locator('h3').allTextContents()
-  expect(mikeTop.slice(0, 3)).not.toEqual(sarahTop.slice(0, 3))
+  // The list is empty while Mike's ranking loads; wait for it before comparing,
+  // otherwise an empty list would trivially differ from Sarah's.
+  const topThree = () => cards(page).locator('h3').allTextContents().then((names) => names.slice(0, 3))
+  await expect.poll(async () => (await topThree()).length).toBe(3)
+  expect(await topThree()).not.toEqual(sarahTop.slice(0, 3))
+  await expect(cards(page).first()).toContainText(/HIIT|Strength|Spin/)
 
   // Coming back as Sarah resets her: the earlier booking is undone.
   await enterAs(page, 'sarah')
