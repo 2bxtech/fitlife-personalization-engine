@@ -78,6 +78,23 @@ public class OptionalCacheTests : IClassFixture<OptionalCacheTests.NoCacheFactor
         validate.Should().NotThrow();
     }
 
+    [Fact]
+    public void SchedulerRole_WithoutACache_RegistersNoRedisClient()
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Cache:Provider"] = "None"
+        }).Build();
+        var environment = new Mock<IHostEnvironment>();
+        environment.SetupGet(e => e.EnvironmentName).Returns("Testing");
+        environment.SetupGet(e => e.ContentRootPath).Returns(AppContext.BaseDirectory);
+
+        var services = WorkerApplication.CreateBuilder(config, environment.Object, ProcessRole.Scheduler).Services;
+
+        services.Should().Contain(d => d.ServiceType == typeof(ICacheService) && d.ImplementationType == typeof(NoOpCacheService));
+        services.Should().NotContain(d => d.ServiceType == typeof(RedisCacheService) || d.ServiceType == typeof(IRedisHealthProbe));
+    }
+
     [Theory]
     [InlineData("none")]
     [InlineData("Memory")]

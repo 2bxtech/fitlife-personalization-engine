@@ -50,7 +50,8 @@ removes the broker from the runtime. The API persists each accepted event
 inside the request through the same idempotent recorder the consumer uses
 (EventId lookup plus the unique EventId index), then requests invalidation of
 the user's recommendation cache for Book, Cancel, Complete, and Rate events.
-Invalidation is best-effort: the Redis client logs and swallows cache errors.
+With Redis, invalidation is best-effort: the Redis client logs and swallows cache
+errors. The minimal profile has no cache, so there is nothing to invalidate.
 
 ```powershell
 docker compose -f docker-compose.yml -f docker-compose.minimal.yml up -d --build api scheduler web

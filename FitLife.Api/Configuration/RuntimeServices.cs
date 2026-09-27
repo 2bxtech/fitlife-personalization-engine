@@ -68,12 +68,13 @@ public static class RuntimeServices
         {
             // Minimal deployment: no Redis. Reads fall through to SQL.
             services.AddSingleton<ICacheService, NoOpCacheService>();
-            return;
         }
-
-        // Register Redis cache service (singleton - connection pooling)
-        services.AddSingleton<RedisCacheService>();
-        services.AddSingleton<ICacheService>(sp => sp.GetRequiredService<RedisCacheService>());
-        services.AddSingleton<IRedisHealthProbe>(sp => sp.GetRequiredService<RedisCacheService>());
+        else
+        {
+            // Register Redis cache service (singleton - connection pooling)
+            services.AddSingleton<RedisCacheService>();
+            services.AddSingleton<ICacheService>(sp => sp.GetRequiredService<RedisCacheService>());
+            services.AddSingleton<IRedisHealthProbe>(sp => sp.GetRequiredService<RedisCacheService>());
+        }
     }
 }
