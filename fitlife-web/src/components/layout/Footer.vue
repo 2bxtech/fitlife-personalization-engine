@@ -1,30 +1,17 @@
 <template>
-  <footer class="bg-gray-800 text-white mt-auto">
-    <div class="container mx-auto px-6 py-8">
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-        <div>
-          <h3 class="text-xl font-bold mb-4">FitLife</h3>
-          <p class="text-gray-400">
-            Personalized gym class recommendations powered by AI
-          </p>
-        </div>
-        <div>
-          <h4 class="font-semibold mb-4">Quick Links</h4>
-          <ul class="space-y-2 text-gray-400">
-            <li><router-link to="/classes" class="hover:text-white">Browse Classes</router-link></li>
-            <li><router-link to="/dashboard" class="hover:text-white">My Dashboard</router-link></li>
-          </ul>
-        </div>
-        <div>
-          <h4 class="font-semibold mb-4">About</h4>
-          <p class="text-gray-400 text-sm">
-            Built with .NET 8, Vue 3, Kafka, and Redis for intelligent class recommendations.
-          </p>
-        </div>
-      </div>
-      <div class="border-t border-gray-700 mt-8 pt-6 text-center text-gray-400">
-        <p>&copy; 2025 FitLife Personalization Engine. All rights reserved.</p>
-      </div>
+  <footer class="mt-auto border-t border-slate-200 bg-white">
+    <div class="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-8 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+      <p>
+        <span class="font-semibold text-slate-900">FitLife</span>
+        is a portfolio case study: deterministic, explainable class recommendations with
+        synthetic demo data. It is not medical or fitness advice.
+      </p>
+      <a
+        href="https://github.com/2bxtech/fitlife-personalization-engine"
+        class="shrink-0 font-semibold text-primary-800 underline-offset-4 hover:underline"
+      >
+        Source and architecture on GitHub
+      </a>
     </div>
   </footer>
 </template>

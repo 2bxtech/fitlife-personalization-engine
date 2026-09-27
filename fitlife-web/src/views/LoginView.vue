@@ -35,7 +35,7 @@ async function handleLogin() {
         </h2>
         <p class="mt-2 text-center text-sm text-gray-600">
           Or
-          <router-link to="/register" class="font-medium text-primary-600 hover:text-primary-500">
+          <router-link to="/register" class="font-medium text-primary-700 hover:text-primary-800">
             create a new account
           </router-link>
         </p>
@@ -80,7 +80,7 @@ async function handleLogin() {
           <button
             type="submit"
             :disabled="loading"
-            class="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:bg-gray-300 disabled:cursor-not-allowed"
+            class="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-primary-700 hover:bg-primary-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:bg-gray-300 disabled:cursor-not-allowed"
           >
             {{ loading ? 'Signing in...' : 'Sign in' }}
           </button>

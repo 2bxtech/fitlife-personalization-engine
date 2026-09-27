@@ -94,7 +94,7 @@ function toggleClassType(type: string) {
           <h1 class="text-3xl font-bold text-gray-900">My Profile</h1>
           <button
             v-if="!editing"
-            class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+            class="px-4 py-2 bg-primary-700 text-white rounded-lg hover:bg-primary-800 transition-colors"
             @click="startEditing"
           >
             Edit Profile
@@ -198,7 +198,7 @@ function toggleClassType(type: string) {
                 :class="[
                   'px-4 py-2 rounded-lg border transition-colors',
                   formData.goals.includes(goal)
-                    ? 'bg-primary-600 text-white border-primary-600'
+                    ? 'bg-primary-700 text-white border-primary-700'
                     : 'bg-white text-gray-700 border-gray-300 hover:border-primary-500'
                 ]"
                 @click="toggleGoal(goal)"
@@ -218,7 +218,7 @@ function toggleClassType(type: string) {
                 :class="[
                   'px-4 py-2 rounded-lg border transition-colors',
                   formData.preferredClassTypes.includes(type)
-                    ? 'bg-primary-600 text-white border-primary-600'
+                    ? 'bg-primary-700 text-white border-primary-700'
                     : 'bg-white text-gray-700 border-gray-300 hover:border-primary-500'
                 ]"
                 @click="toggleClassType(type)"
@@ -232,7 +232,7 @@ function toggleClassType(type: string) {
             <button
               type="submit"
               :disabled="saving"
-              class="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:bg-gray-300 transition-colors"
+              class="px-6 py-2 bg-primary-700 text-white rounded-lg hover:bg-primary-800 disabled:bg-gray-300 transition-colors"
             >
               {{ saving ? 'Saving...' : 'Save Changes' }}
             </button>
