@@ -95,16 +95,17 @@ public class ScoringEngine : IScoringEngine
     /// <summary>Factor 4 (up to 8): start time versus start times of classes the user booked.</summary>
     private static ScoreFactor TimeOfDay(DateTime classStartTime, ScoringHistory history)
     {
+        // Details avoid clock times: the API compares UTC hours, while visitors read
+        // local times, so a relative statement is the one that stays true.
         var hour = classStartTime.Hour;
-        var time = classStartTime.ToString("h tt", CultureInfo.InvariantCulture) + " UTC";
         if (history.BookedStartHoursUtc.Count == 0)
             return new(ScoreFactorKeys.TimeOfDay, "Time of day", 0, "No booking history to compare times");
         if (history.BookedStartHoursUtc.Contains(hour))
-            return new(ScoreFactorKeys.TimeOfDay, "Time of day", 8, $"Starts at {time}, when classes you booked started");
+            return new(ScoreFactorKeys.TimeOfDay, "Time of day", 8, "Starts in the same hour as classes you've booked");
         // Hours wrap at midnight: 23:00 and 00:00 are one hour apart.
         if (history.BookedStartHoursUtc.Any(booked => Math.Min(Math.Abs(booked - hour), 24 - Math.Abs(booked - hour)) <= 1))
-            return new(ScoreFactorKeys.TimeOfDay, "Time of day", 4, $"Starts at {time}, within an hour of classes you booked");
-        return new(ScoreFactorKeys.TimeOfDay, "Time of day", 0, $"Starts at {time}, outside your usual booking times");
+            return new(ScoreFactorKeys.TimeOfDay, "Time of day", 4, "Starts within an hour of classes you've booked");
+        return new(ScoreFactorKeys.TimeOfDay, "Time of day", 0, "Starts at a different time from classes you've booked");
     }
 
     /// <summary>Factor 5 (rating × 2): average member rating.</summary>
