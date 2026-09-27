@@ -18,7 +18,31 @@ public class DbSeeder
         _logger = logger;
     }
 
+    /// <summary>
+    /// Idempotently seeds the synthetic catalog. On SQL Server the whole operation runs
+    /// in one transaction under an application lock, so replicas starting together
+    /// cannot both pass the "no history yet" check and insert duplicate histories.
+    /// </summary>
     public async Task SeedAsync()
+    {
+        if (!_context.Database.IsRelational())
+        {
+            await SeedCoreAsync();
+            return;
+        }
+
+        var strategy = _context.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
+        {
+            _context.ChangeTracker.Clear();
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            await SqlAppLock.AcquireAsync(_context, "fitlife-demo-seed");
+            await SeedCoreAsync();
+            await transaction.CommitAsync();
+        });
+    }
+
+    private async Task SeedCoreAsync()
     {
         try
         {

@@ -145,6 +145,42 @@ public class DemoPersonaTests : IClassFixture<DemoPersonaTests.DemoFactory>, IAs
     }
 
     [SqlServerFact]
+    public async Task ConcurrentStartupSeeding_OnSqlServer_InsertsEachHistoryOnce()
+    {
+        var connectionString = new SqlConnectionStringBuilder(
+            Environment.GetEnvironmentVariable("FITLIFE_SQLSERVER_TEST_CONNECTION")!)
+        {
+            InitialCatalog = $"FitLifeDemoSeed_{Guid.NewGuid():N}"
+        }.ConnectionString;
+        var options = new DbContextOptionsBuilder<FitLifeDbContext>()
+            .UseSqlServer(connectionString, sql => sql.EnableRetryOnFailure()).Options;
+        try
+        {
+            await using (var setup = new FitLifeDbContext(options))
+                await setup.Database.EnsureCreatedAsync();
+
+            // Replicas starting together, each with its own context.
+            await Task.WhenAll(Enumerable.Range(0, 4).Select(async _ =>
+            {
+                await using var context = new FitLifeDbContext(options);
+                await new DbSeeder(context, NullLogger<DbSeeder>.Instance).SeedAsync();
+            }));
+
+            await using var verify = new FitLifeDbContext(options);
+            var now = DateTime.UtcNow;
+            (await verify.Users.CountAsync()).Should().Be(DemoCatalog.Users(now).Count);
+            (await verify.Classes.CountAsync()).Should().Be(DemoCatalog.Classes(now).Count);
+            (await verify.Interactions.CountAsync()).Should().Be(
+                DemoCatalog.Users(now).Sum(user => DemoCatalog.History(user.Id, now).Count));
+        }
+        finally
+        {
+            await using var cleanup = new FitLifeDbContext(options);
+            await cleanup.Database.EnsureDeletedAsync();
+        }
+    }
+
+    [SqlServerFact]
     public async Task ConcurrentSessions_OnSqlServer_AllSucceedAndLeaveEnrollmentConsistent()
     {
         var connectionString = new SqlConnectionStringBuilder(

@@ -201,19 +201,11 @@ if (!app.Environment.IsEnvironment("Testing"))
 // without a manual step. Seeding is idempotent.
 if (DemoMode.IsEnabled(app.Configuration) && !app.Environment.IsEnvironment("Testing") && !args.Contains("--seed"))
 {
+    // The seeder serializes concurrent replicas with a database application lock.
     using var demoScope = app.Services.CreateScope();
-    try
-    {
-        await new FitLife.Infrastructure.Data.DbSeeder(
-            demoScope.ServiceProvider.GetRequiredService<FitLifeDbContext>(),
-            demoScope.ServiceProvider.GetRequiredService<ILogger<FitLife.Infrastructure.Data.DbSeeder>>()).SeedAsync();
-    }
-    catch (DbUpdateException ex)
-    {
-        // Replicas starting together race to insert the same rows; one wins and the
-        // data is identical, so a losing replica continues rather than failing startup.
-        app.Logger.LogWarning(ex, "Demo seeding lost a race with another replica; continuing");
-    }
+    await new FitLife.Infrastructure.Data.DbSeeder(
+        demoScope.ServiceProvider.GetRequiredService<FitLifeDbContext>(),
+        demoScope.ServiceProvider.GetRequiredService<ILogger<FitLife.Infrastructure.Data.DbSeeder>>()).SeedAsync();
 }
 
 // Seed database if --seed argument is provided
