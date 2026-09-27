@@ -112,8 +112,10 @@ save remains a separate reliability concern.
 ## Operational signals
 
 **Verified in tests:** every role publishes counters on the `FitLife` meter
-(`System.Diagnostics.Metrics`). Each test observes its own meter instance, and the
-tests fail when emission is removed. **Not configured:** no exporter is wired, so
+(`System.Diagnostics.Metrics`). Tests observe per-test meter instances and cover
+publish (both transports), recorded, retry, dead-letter, and the recommendation
+generator's run, duration, and user counts; they fail when emission is removed.
+The user profiler uses the same `WorkerRun` wrapper but has no dedicated metric test. **Not configured:** no exporter is wired, so
 nothing collects these values until deployment adds OpenTelemetry or
 `dotnet-counters` is attached.
 
@@ -123,7 +125,7 @@ nothing collects these values until deployment adds OpenTelemetry or
 | `fitlife.events.recorded` | `outcome` (stored, duplicate) | Consumer and Direct transport |
 | `fitlife.events.retries` | none | Consumer, per failed attempt that is retried |
 | `fitlife.events.dead_lettered` | `disposition` | Consumer, after the DLQ publish succeeds |
-| `fitlife.worker.runs` | `worker`, `outcome` | Scheduler batches |
+| `fitlife.worker.runs` | `worker`, `outcome` (success, failure, cancelled) | Scheduler batches |
 | `fitlife.worker.run.duration` (s) | `worker`, `outcome` | Scheduler batches |
 | `fitlife.worker.users` | `worker`, `outcome` | Users processed per batch |
 

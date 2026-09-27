@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FitLife.Api.Configuration;
 using FitLife.Api.Events;
+using FitLife.Api.Observability;
 using FitLife.Core.DTOs;
 using FitLife.Core.Interfaces;
 using FitLife.Core.Models;
@@ -13,6 +14,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.Metrics.Testing;
 using Microsoft.Extensions.Hosting;
 using Moq;
 
@@ -38,6 +40,8 @@ public class DirectEventTransportTests : IClassFixture<DirectEventTransportTests
     [Fact]
     public async Task AcceptedEvent_IsStoredBeforeResponse_AndRetryWithSameEventIdIsIgnored()
     {
+        using var published = new MetricCollector<long>(
+            _factory.Services.GetRequiredService<FitLifeMetrics>().Meter, "fitlife.events.published");
         var (client, userId) = await AuthenticatedClientAsync();
         var eventId = Guid.NewGuid().ToString();
         var dto = new EventDto
@@ -57,6 +61,8 @@ public class DirectEventTransportTests : IClassFixture<DirectEventTransportTests
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<FitLifeDbContext>();
         (await db.Interactions.CountAsync(i => i.EventId == eventId)).Should().Be(1);
+        published.GetMeasurementSnapshot().Select(m => $"{m.Tags["transport"]}:{m.Tags["outcome"]}")
+            .Should().Equal("direct:success", "direct:success");
     }
 
     [Fact]

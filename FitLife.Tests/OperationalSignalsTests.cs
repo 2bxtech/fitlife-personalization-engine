@@ -139,6 +139,37 @@ public class OperationalSignalsTests : IClassFixture<FitLifeWebApplicationFactor
     }
 
     [Fact]
+    public async Task SchedulerRun_InterruptedByShutdown_IsCancelledNotSuccess()
+    {
+        using var shutdown = new CancellationTokenSource();
+        var users = new Mock<IUserRepository>();
+        users.Setup(r => r.GetAllAsync()).ReturnsAsync(new[]
+        {
+            new User { Id = "first" }, new User { Id = "never-reached" }
+        });
+        var recommendations = new Mock<IRecommendationService>();
+        recommendations.Setup(s => s.GenerateRecommendationsAsync("first", 10))
+            .Callback(() => shutdown.Cancel())
+            .ReturnsAsync(new List<RecommendationDto>());
+        await using var provider = Provider(services =>
+        {
+            services.AddSingleton(users.Object);
+            services.AddSingleton(Mock.Of<IInteractionRepository>());
+            services.AddSingleton(recommendations.Object);
+        });
+        using var runs = new MetricCollector<long>(
+            provider.GetRequiredService<FitLifeMetrics>().Meter, "fitlife.worker.runs");
+        var generator = new RecommendationGeneratorService(
+            NullLogger<RecommendationGeneratorService>.Instance, EmptyConfig(), provider);
+
+        await generator.RunBatchAsync(10, false, shutdown.Token);
+
+        runs.GetMeasurementSnapshot().Should().ContainSingle()
+            .Which.Tags["outcome"].Should().Be("cancelled");
+        recommendations.Verify(s => s.GenerateRecommendationsAsync("never-reached", 10), Times.Never);
+    }
+
+    [Fact]
     public async Task SchedulerRun_FailureIsCountedAndRethrown()
     {
         var users = new Mock<IUserRepository>();

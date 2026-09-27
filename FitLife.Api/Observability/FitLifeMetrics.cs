@@ -58,9 +58,10 @@ public sealed class FitLifeMetrics
     public void EventDeadLettered(string disposition) =>
         _eventsDeadLettered.Add(1, new KeyValuePair<string, object?>("disposition", disposition));
 
-    public void WorkerRunCompleted(string worker, bool success, TimeSpan duration)
+    /// <param name="outcome">success, failure, or cancelled (shutdown interrupted the batch).</param>
+    public void WorkerRunCompleted(string worker, string outcome, TimeSpan duration)
     {
-        var tags = new TagList { { "worker", worker }, { "outcome", success ? "success" : "failure" } };
+        var tags = new TagList { { "worker", worker }, { "outcome", outcome } };
         _workerRuns.Add(1, tags);
         _workerRunDuration.Record(duration.TotalSeconds, tags);
     }

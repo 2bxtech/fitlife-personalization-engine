@@ -18,18 +18,29 @@ internal static class WorkerRun
         {
             var (succeeded, failed) = await batch();
             metrics?.WorkerUsersProcessed(worker, succeeded, failed);
-            metrics?.WorkerRunCompleted(worker, success: true, stopwatch.Elapsed);
+            if (cancellationToken.IsCancellationRequested)
+            {
+                // Batches stop between users on shutdown; a partial batch is not a success.
+                metrics?.WorkerRunCompleted(worker, "cancelled", stopwatch.Elapsed);
+                logger.LogInformation(
+                    "Worker run cancelled: {Worker} on {Owner} after {DurationSeconds:F2}s; {Succeeded} users succeeded, {Failed} failed",
+                    worker, FitLifeMetrics.ProcessOwner, stopwatch.Elapsed.TotalSeconds, succeeded, failed);
+                return;
+            }
+
+            metrics?.WorkerRunCompleted(worker, "success", stopwatch.Elapsed);
             logger.LogInformation(
                 "Worker run finished: {Worker} on {Owner} in {DurationSeconds:F2}s; {Succeeded} users succeeded, {Failed} failed",
                 worker, FitLifeMetrics.ProcessOwner, stopwatch.Elapsed.TotalSeconds, succeeded, failed);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            metrics?.WorkerRunCompleted(worker, "cancelled", stopwatch.Elapsed);
             throw;
         }
         catch (Exception ex)
         {
-            metrics?.WorkerRunCompleted(worker, success: false, stopwatch.Elapsed);
+            metrics?.WorkerRunCompleted(worker, "failure", stopwatch.Elapsed);
             logger.LogError(ex, "Worker run failed: {Worker} on {Owner} after {DurationSeconds:F2}s",
                 worker, FitLifeMetrics.ProcessOwner, stopwatch.Elapsed.TotalSeconds);
             throw;
