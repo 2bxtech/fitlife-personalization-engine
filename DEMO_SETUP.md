@@ -15,10 +15,11 @@ not proven live.
 docker compose -f docker-compose.yml -f docker-compose.minimal.yml up -d --build api scheduler web
 ```
 
-This starts SQL Server, Redis, the API, the scheduler, and the web app, without
-Kafka. The API runs in demo mode: it applies migrations, seeds the synthetic
-catalog and personas at startup, and persists events in-request (the Direct
-transport; see [Worker topology](public-docs/Worker-Topology.md#kafka-free-minimal-demo)).
+This starts SQL Server, the API, the scheduler, and the web app, without Kafka
+or Redis. The API runs in demo mode: it applies migrations and seeds the
+synthetic catalog and personas at startup. It also persists events in-request
+(the Direct transport) and reads recommendations straight from SQL
+(`Cache:Provider=None`); see [Worker topology](public-docs/Worker-Topology.md#kafka-free-minimal-demo).
 
 - App: <http://localhost:3000>
 - API and Swagger: <http://localhost:5269/swagger>

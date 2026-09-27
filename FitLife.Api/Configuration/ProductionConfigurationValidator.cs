@@ -36,7 +36,7 @@ public static class ProductionConfigurationValidator
             invalidKeys.Add("ConnectionStrings:DefaultConnection");
         }
 
-        if (IsMissingOrLocal(redisConnection))
+        if (CacheMode.Read(configuration) == CacheProvider.Redis && IsMissingOrLocal(redisConnection))
         {
             invalidKeys.Add("Redis:ConnectionString");
         }

@@ -64,9 +64,17 @@ public static class RuntimeServices
                 sp.GetRequiredService<KafkaProducer>());
         }
 
-        // Register Redis cache service (singleton - connection pooling)
-        services.AddSingleton<RedisCacheService>();
-        services.AddSingleton<ICacheService>(sp => sp.GetRequiredService<RedisCacheService>());
-        services.AddSingleton<IRedisHealthProbe>(sp => sp.GetRequiredService<RedisCacheService>());
+        if (CacheMode.Read(configuration) == CacheProvider.None)
+        {
+            // Minimal deployment: no Redis. Reads fall through to SQL.
+            services.AddSingleton<ICacheService, NoOpCacheService>();
+        }
+        else
+        {
+            // Register Redis cache service (singleton - connection pooling)
+            services.AddSingleton<RedisCacheService>();
+            services.AddSingleton<ICacheService>(sp => sp.GetRequiredService<RedisCacheService>());
+            services.AddSingleton<IRedisHealthProbe>(sp => sp.GetRequiredService<RedisCacheService>());
+        }
     }
 }

@@ -200,13 +200,17 @@ builder.Services.AddCors(options =>
 });
 
 // Add dependency-independent liveness and dependency-aware readiness checks
-builder.Services.AddHealthChecks()
+var healthChecks = builder.Services.AddHealthChecks()
     .AddCheck(
         "self",
         () => HealthCheckResult.Healthy("Process is running"),
         tags: new[] { "live" })
-    .AddCheck<DatabaseHealthCheck>("database", tags: new[] { "ready" })
-    .AddCheck<RedisHealthCheck>("redis", tags: new[] { "ready" });
+    .AddCheck<DatabaseHealthCheck>("database", tags: new[] { "ready" });
+// Readiness covers only the dependencies this deployment actually uses.
+if (CacheMode.Read(builder.Configuration) == CacheProvider.Redis)
+{
+    healthChecks.AddCheck<RedisHealthCheck>("redis", tags: new[] { "ready" });
+}
 
 var app = builder.Build();
 

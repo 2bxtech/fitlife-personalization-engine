@@ -50,11 +50,21 @@ removes the broker from the runtime. The API persists each accepted event
 inside the request through the same idempotent recorder the consumer uses
 (EventId lookup plus the unique EventId index), then requests invalidation of
 the user's recommendation cache for Book, Cancel, Complete, and Rate events.
-Invalidation is best-effort: the Redis client logs and swallows cache errors.
+With Redis, invalidation is best-effort: the Redis client logs and swallows cache
+errors. The minimal profile has no cache, so there is nothing to invalidate.
 
 ```powershell
 docker compose -f docker-compose.yml -f docker-compose.minimal.yml up -d --build api scheduler web
 ```
+
+The minimal profile also sets `Cache:Provider=None`, so it runs without Redis.
+Recommendation reads skip the cache and use recently persisted rows in SQL, or
+regenerate. Readiness checks only the database, and production configuration no
+longer requires a Redis connection. **Verified:** tests assert that no Redis
+client or readiness check is registered, and a persona session returns stable
+recommendations. The Playwright journey passes against this Compose profile
+through the nginx web container. `Cache:Provider=Redis` (the default) keeps
+cache-aside behavior; unknown values fail closed.
 
 Trade-offs compared with the Kafka transport:
 
