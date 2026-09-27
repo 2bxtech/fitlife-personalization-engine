@@ -38,6 +38,7 @@ public static class RuntimeServices
         services.AddScoped<IInteractionRepository, InteractionRepository>();
         services.AddScoped<IRecommendationRepository, RecommendationRepository>();
         services.AddScoped<IBookingService, BookingService>();
+        services.AddScoped<DemoPersonaService>();
 
         services.AddMetrics();
         services.AddSingleton<FitLifeMetrics>();

@@ -155,6 +155,17 @@ public class UpdateUserPreferencesDto
 /// <summary>
 /// DTO for authentication response (login/register)
 /// </summary>
+/// <summary>A synthetic demo member a visitor can sign in as with one click.</summary>
+public class DemoPersonaDto
+{
+    public string Id { get; set; } = string.Empty;
+    public string FirstName { get; set; } = string.Empty;
+    public string FitnessLevel { get; set; } = string.Empty;
+    public List<string> PreferredClassTypes { get; set; } = new();
+    public string Headline { get; set; } = string.Empty;
+    public string Summary { get; set; } = string.Empty;
+}
+
 public class AuthResponseDto
 {
     public string Token { get; set; } = string.Empty;

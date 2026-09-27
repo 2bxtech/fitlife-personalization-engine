@@ -197,6 +197,17 @@ if (!app.Environment.IsEnvironment("Testing"))
     }
 }
 
+// Demo environments seed synthetic data at startup so a fresh deployment is usable
+// without a manual step. Seeding is idempotent.
+if (DemoMode.IsEnabled(app.Configuration) && !app.Environment.IsEnvironment("Testing") && !args.Contains("--seed"))
+{
+    // The seeder serializes concurrent replicas with a database application lock.
+    using var demoScope = app.Services.CreateScope();
+    await new FitLife.Infrastructure.Data.DbSeeder(
+        demoScope.ServiceProvider.GetRequiredService<FitLifeDbContext>(),
+        demoScope.ServiceProvider.GetRequiredService<ILogger<FitLife.Infrastructure.Data.DbSeeder>>()).SeedAsync();
+}
+
 // Seed database if --seed argument is provided
 if (args.Contains("--seed"))
 {
