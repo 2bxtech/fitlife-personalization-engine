@@ -21,7 +21,21 @@ jobs:
   test:
     name: Run Tests
     runs-on: ubuntu-latest
-    
+    env:
+      # Per-run throwaway password for the disposable service container (not a secret).
+      MSSQL_SA_PASSWORD: Ci-${{ github.run_id }}-${{ github.run_attempt }}-Aa1!
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: Y
+          MSSQL_SA_PASSWORD: Ci-${{ github.run_id }}-${{ github.run_attempt }}-Aa1!
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$MSSQL_SA_PASSWORD\" -C -Q 'SELECT 1' -b"
+          --health-interval 10s --health-timeout 5s --health-retries 12 --health-start-period 20s
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -37,8 +51,17 @@ jobs:
     - name: Build solution
       run: dotnet build --configuration Release --no-restore
 
-    - name: Run backend tests
-      run: dotnet test --no-build --verbosity normal --configuration Release
+    - name: Run backend tests (including SQL Server concurrency and dedup tests)
+      env:
+        FITLIFE_SQLSERVER_TEST_CONNECTION: Server=localhost,1433;User Id=sa;Password=${{ env.MSSQL_SA_PASSWORD }};TrustServerCertificate=True;
+      run: |
+        set -o pipefail
+        dotnet test --no-build --verbosity normal --configuration Release | tee test-output.log
+        # SQL-gated tests skip when the connection is missing; in CI that is a failure.
+        if ! grep -Eq 'Skipped: +0,' test-output.log; then
+          echo "::error::Backend tests were skipped; the SQL Server service was not used."
+          exit 1
+        fi
 
   test-frontend:
     name: Frontend Lint, Tests & Build
