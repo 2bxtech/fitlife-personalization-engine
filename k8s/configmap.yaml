@@ -13,5 +13,5 @@ data:
   JWT_EXPIRATION_HOURS: "24"
   # Rate limiting identifies clients by the address the ingress controller appends.
   # Set the CIDR to the cluster's ingress/pod network before applying.
-  ReverseProxy__TrustForwardedHeaders: "true"
-  ReverseProxy__KnownNetworks__0: "10.0.0.0/8"
+  REVERSE_PROXY_TRUST_FORWARDED_HEADERS: "true"
+  REVERSE_PROXY_KNOWN_NETWORK: "10.0.0.0/8"
