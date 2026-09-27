@@ -12,6 +12,7 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using System.Text;
 using AspNetCoreRateLimit;
+using Microsoft.AspNetCore.HttpOverrides;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -125,8 +126,8 @@ builder.Services.Configure<IpRateLimitOptions>(options =>
     options.EnableEndpointRateLimiting = true;
     options.StackBlockedRequests = false;
     options.HttpStatusCode = 429;
-    options.RealIpHeader = "X-Real-IP";
-    options.ClientIdHeader = "X-ClientId";
+    // Identity comes from the connection address only; see
+    // ConnectionIpRateLimitConfiguration.
     options.GeneralRules = new List<RateLimitRule>
     {
         new RateLimitRule
@@ -146,8 +147,20 @@ builder.Services.Configure<IpRateLimitOptions>(options =>
 
 builder.Services.AddSingleton<IIpPolicyStore, MemoryCacheIpPolicyStore>();
 builder.Services.AddSingleton<IRateLimitCounterStore, MemoryCacheRateLimitCounterStore>();
-builder.Services.AddSingleton<IRateLimitConfiguration, RateLimitConfiguration>();
+builder.Services.AddSingleton<IRateLimitConfiguration, FitLife.Api.Security.ConnectionIpRateLimitConfiguration>();
 builder.Services.AddSingleton<IProcessingStrategy, AsyncKeyLockProcessingStrategy>();
+
+// Behind a reverse proxy (e.g. a managed ingress) the connection address is the
+// proxy's. When explicitly trusted, take only the address the nearest proxy
+// appended (ForwardLimit = 1); values a client prepends are ignored.
+var trustForwardedHeaders = builder.Configuration.GetValue("ReverseProxy:TrustForwardedHeaders", false);
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.ForwardLimit = 1;
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+});
 
 // Configure CORS for production
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() 
@@ -254,6 +267,13 @@ if (app.Environment.IsDevelopment())
         c.SwaggerEndpoint("/swagger/v1/swagger.json", "FitLife API V1");
         c.RoutePrefix = "swagger";
     });
+}
+
+// Must run before HTTPS redirection and rate limiting so both see the client's
+// scheme and address rather than the proxy's.
+if (trustForwardedHeaders)
+{
+    app.UseForwardedHeaders();
 }
 
 // Local Vite development proxies to the HTTP launch profile. Redirecting its
