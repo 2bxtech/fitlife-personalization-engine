@@ -49,8 +49,7 @@ docker-compose up -d --build
 # Wait for healthy containers (~60s)
 docker ps
 
-# Seed the database (first time only)
-docker exec fitlife-api dotnet FitLife.Api.dll --seed
+# Demo mode seeds the synthetic catalog and personas at startup.
 ```
 - **Frontend**: http://localhost:3000
 - **API/Swagger**: http://localhost:5269/swagger
@@ -60,17 +59,19 @@ Scheduler terminals using [Worker Topology](public-docs/Worker-Topology.md) when
 those features are needed. Full Docker configures both workers; do not start an
 additional local scheduler against its database.
 
-## Demo Users
+## Demo members
 
-All passwords: `Demo123!`
+Open the app and pick a persona. One click, no password:
 
-| Email | Persona | Shows |
-|-------|---------|-------|
-| sarah.johnson@example.com | Yoga Enthusiast | Yoga/Pilates classes |
-| mike.chen@example.com | Highly Active | HIIT/Strength/Spin |
-| emily.rodriguez@example.com | Beginner | Easy classes |
-| david.kim@example.com | Cardio Lover | Spin/Running |
-| jessica.taylor@example.com | Strength Trainer | Strength/HIIT |
+| Persona | Shows |
+|---|---|
+| Sarah | Yoga regular with morning history: morning yoga with her instructor ranks first |
+| Mike | Advanced, evening HIIT and strength history: those rank first |
+| Emily | New member with one completed class: ranking leans on preferences and level |
+
+Starting a session resets that persona, undoing earlier visitors' bookings.
+Seeded accounts also accept the local-only password `Demo123!` on the sign-in
+page.
 
 ## Endpoints
 - **Frontend**: http://localhost:3000
@@ -98,14 +99,8 @@ taskkill /PID <PID> /F  # Kill it
 
 ## Hosted Demo
 
-See `DEMO_SETUP.md` for:
-- local and containerized demo setup
-- illustrative Azure and managed-platform deployment guidance
-- GitHub Actions validation and disabled deployment-stage configuration
-
-There is no verified public hosted environment yet. Hosting availability,
-pricing, and setup time vary by provider and are intentionally not estimated
-here.
+There is no verified public hosted environment yet. Deployment is planned as a
+separate, cost-bounded step; nothing here claims a live deployment.
 
 ---
 

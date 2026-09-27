@@ -3,6 +3,8 @@
 An explainable, event-driven gym-class personalization case study built with
 .NET 8, Vue 3, SQL Server, Redis, and Kafka.
 
+![A demo member's top recommendation with its nine-factor score breakdown](public-docs/images/dashboard-breakdown.png)
+
 FitLife combines member preferences, fitness level, instructor affinity,
 schedule, class availability, ratings, recency, popularity, and behavior-derived
 segments to produce ranked recommendations with human-readable reasons. The
@@ -14,6 +16,22 @@ requirement.
 > Docker environment are implemented and tested. A public hosted environment has
 > not yet been verified. Kubernetes and disabled Azure deployment assets are
 > configuration evidence, not a claim of a live AKS deployment.
+
+## See it in action
+
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.minimal.yml up -d --build api scheduler web
+```
+
+Open <http://localhost:3000>, then pick a demo member. One click starts a
+session, with no sign-up. Open **Why #1?** on any card to see each rule's
+points, book a class, then use **View as** to watch the same catalog rank
+differently for another member. [Demo guide](DEMO_SETUP.md) has a five-minute
+script and the evidence behind each claim.
+
+| Mike's ranking (evening HIIT and strength) | Mobile |
+|---|---|
+| ![Mike's recommendations](public-docs/images/dashboard-mike.png) | ![Emily's recommendations on a phone](public-docs/images/mobile-dashboard.png) |
 
 ## What this project demonstrates
 
@@ -33,16 +51,17 @@ requirement.
 
 ## Product flow
 
-1. A member registers or signs in.
+1. A visitor picks a synthetic demo member (the session resets that member), or
+   a member registers or signs in.
 2. The API ranks upcoming classes with available capacity using profile and
    interaction data.
-3. Each recommendation includes a concise explanation such as preferred class
-   type, instructor affinity, schedule fit, or rating.
+3. Each recommendation includes a one-line reason built only from rules that
+   scored, and the full factor breakdown behind its score.
 4. The member books or cancels a class.
 5. Booking state, enrollment, and the corresponding interaction are committed
    atomically.
-6. The UI updates the affected class and refreshes recommendations after the
-   commit.
+6. The UI updates the booked card from the booking response at once. The
+   re-rank runs afterwards, and if it fails the booking still stands.
 
 Booking state is scoped to the authenticated member. One member cannot inspect
 or cancel another member's booking through the class API. Classes with no
