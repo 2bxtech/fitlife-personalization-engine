@@ -27,7 +27,7 @@ async function handleLogin() {
     await authStore.login({ email: email.value, password: password.value })
     router.push(safeRedirect(route.query.redirect))
   } catch (e: any) {
-    error.value = e.response?.data?.error || 'Login failed. Please check your credentials.'
+    error.value = e.response?.data?.message || 'Login failed. Please check your credentials.'
   } finally {
     loading.value = false
   }
@@ -56,7 +56,7 @@ async function handleLogin() {
         with one click, no account needed.
       </p>
       <form class="mt-8 space-y-6" @submit.prevent="handleLogin">
-        <div v-if="error" class="bg-red-50 border border-red-200 rounded-lg p-4">
+        <div v-if="error" role="alert" class="bg-red-50 border border-red-200 rounded-lg p-4">
           <p class="text-red-800 text-sm">{{ error }}</p>
         </div>
 

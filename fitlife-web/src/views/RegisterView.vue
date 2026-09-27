@@ -2,6 +2,8 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import ChipCheckboxGroup from '@/components/ui/ChipCheckboxGroup.vue'
+import { CLASS_TYPES, FITNESS_GOALS, FITNESS_LEVELS } from '@/constants/profile'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -19,28 +21,6 @@ const formData = ref({
 
 const error = ref('')
 const loading = ref(false)
-
-const fitnessLevels = ['Beginner', 'Intermediate', 'Advanced']
-const availableGoals = ['Weight Loss', 'Muscle Building', 'Endurance', 'Flexibility', 'General Fitness']
-const classTypes = ['Yoga', 'Spin', 'HIIT', 'Strength', 'Pilates', 'Boxing', 'Cardio']
-
-function toggleGoal(goal: string) {
-  const index = formData.value.goals.indexOf(goal)
-  if (index > -1) {
-    formData.value.goals.splice(index, 1)
-  } else {
-    formData.value.goals.push(goal)
-  }
-}
-
-function toggleClassType(type: string) {
-  const index = formData.value.preferredClassTypes.indexOf(type)
-  if (index > -1) {
-    formData.value.preferredClassTypes.splice(index, 1)
-  } else {
-    formData.value.preferredClassTypes.push(type)
-  }
-}
 
 async function handleRegister() {
   error.value = ''
@@ -69,7 +49,7 @@ async function handleRegister() {
     })
     router.push('/dashboard')
   } catch (e: any) {
-    error.value = e.response?.data?.error || 'Registration failed. Please try again.'
+    error.value = e.response?.data?.message || 'Registration failed. Please try again.'
   } finally {
     loading.value = false
   }
@@ -92,7 +72,7 @@ async function handleRegister() {
       </div>
       
       <form class="bg-white shadow-md rounded-lg p-8 space-y-6" @submit.prevent="handleRegister">
-        <div v-if="error" class="bg-red-50 border border-red-200 rounded-lg p-4">
+        <div v-if="error" role="alert" class="bg-red-50 border border-red-200 rounded-lg p-4">
           <p class="text-red-800 text-sm">{{ error }}</p>
         </div>
 
@@ -166,64 +146,24 @@ async function handleRegister() {
           </div>
         </div>
 
-        <!-- Fitness Profile -->
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">
-            Fitness Level
-          </label>
+          <label for="fitnessLevel" class="block text-sm font-medium text-gray-700 mb-2">Fitness level</label>
           <select
+            id="fitnessLevel"
             v-model="formData.fitnessLevel"
             class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
           >
-            <option v-for="level in fitnessLevels" :key="level" :value="level">
-              {{ level }}
-            </option>
+            <option v-for="level in FITNESS_LEVELS" :key="level" :value="level">{{ level }}</option>
           </select>
         </div>
 
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">
-            Fitness Goals (select all that apply)
-          </label>
-          <div class="flex flex-wrap gap-2">
-            <button
-              v-for="goal in availableGoals"
-              :key="goal"
-              type="button"
-              :class="[
-                'px-4 py-2 rounded-lg border transition-colors',
-                formData.goals.includes(goal)
-                  ? 'bg-primary-700 text-white border-primary-700'
-                  : 'bg-white text-gray-700 border-gray-300 hover:border-primary-500'
-              ]"
-              @click="toggleGoal(goal)"
-            >
-              {{ goal }}
-            </button>
-          </div>
-        </div>
-
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">
-            Preferred Class Types
-          </label>
-          <div class="flex flex-wrap gap-2">
-            <button
-              v-for="type in classTypes"
-              :key="type"
-              type="button"
-              :class="[
-                'px-4 py-2 rounded-lg border transition-colors',
-                formData.preferredClassTypes.includes(type)
-                  ? 'bg-primary-700 text-white border-primary-700'
-                  : 'bg-white text-gray-700 border-gray-300 hover:border-primary-500'
-              ]"
-              @click="toggleClassType(type)"
-            >
-              {{ type }}
-            </button>
-          </div>
-        </div>
+        <ChipCheckboxGroup
+          v-model="formData.preferredClassTypes"
+          legend="Preferred class types"
+          hint="Classes of these types rank higher."
+          :options="CLASS_TYPES"
+        />
+        <ChipCheckboxGroup v-model="formData.goals" legend="Goals (optional)" :options="FITNESS_GOALS" />
 
         <button
           type="submit"
