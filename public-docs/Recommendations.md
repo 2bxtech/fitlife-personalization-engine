@@ -34,10 +34,10 @@ their sum equals the score used for ranking.
 
 | Key | Points | Rule |
 |---|---|---|
-| `fitness_level` | 0–10 | 10 for "All Levels" or an exact level match; partial credit for easier classes; 0 for an Advanced class and a Beginner member |
+| `fitness_level` | 0–10 | 10 for "All Levels" or an exact match; 5 for one level easier; 3 for two levels easier or one level harder; 0 for an Advanced class and a Beginner member |
 | `class_type` | 15 | The class type is in the member's chosen preferred types |
 | `instructor` | 20 | The member has completed 2 or more classes with this instructor |
-| `time_of_day` | 0, 4, 8 | The class starts in the same UTC hour (8), or within an hour (4), as classes the member booked |
+| `time_of_day` | 0, 4, 8 | The class starts in the same UTC hour (8), or within an hour across midnight (4), as classes the member booked |
 | `rating` | rating × 2 | Average member rating (0–10 points) |
 | `availability` | −5 to +3 | −5 when under 20% of spots are open; +3 when over 80% are open |
 | `activity_profile` | 0–12 | A fixed rule keyed on the member's segment (below) |

@@ -48,6 +48,30 @@ public class ExplainableRecommendationTests
     }
 
     [Fact]
+    public void TimePreference_TreatsMidnightAsAdjacentHours()
+    {
+        var bookedAtMidnight = ClassAt("late", "Spin", 0, "inst_a");
+        var history = ScoringHistory.From(
+            new[] { new Interaction { ItemId = "late", EventType = EventTypes.Book } },
+            new Dictionary<string, Class> { ["late"] = bookedAtMidnight });
+        var user = new User { FitnessLevel = "Intermediate", PreferredClassTypes = "[]" };
+
+        Factor(_engine.Explain(user, ClassAt("eleven", "Spin", 23, "inst_b"), history), ScoreFactorKeys.TimeOfDay)
+            .Points.Should().Be(4);
+    }
+
+    [Fact]
+    public void UnratedClass_IsDescribedAsUnrated()
+    {
+        var unrated = ClassAt("new", "Yoga", 9, "inst_a");
+        unrated.AverageRating = 0;
+        var user = new User { FitnessLevel = "Intermediate", PreferredClassTypes = "[]" };
+
+        Factor(_engine.Explain(user, unrated, ScoringHistory.Empty), ScoreFactorKeys.Rating)
+            .Detail.Should().Be("No ratings yet");
+    }
+
+    [Fact]
     public void InstructorAffinity_ComesFromCompletedClasses_WithoutMetadata()
     {
         var classes = new Dictionary<string, Class>

@@ -127,9 +127,15 @@ public class RecommendationService : IRecommendationService
             // Get user's interaction history and the classes it refers to, so history
             // facts (instructor, start time) come from the classes themselves.
             var userInteractions = await _interactionRepository.GetRecentByUserIdAsync(userId, days: 90);
-            var historyClasses = (await _classRepository.GetByIdsAsync(
-                    userInteractions.Select(interaction => interaction.ItemId).Distinct()))
-                .ToDictionary(classItem => classItem.Id);
+            // Only Book and Complete events feed history facts; skip the lookup without them.
+            var historyClassIds = userInteractions
+                .Where(interaction => interaction.EventType is EventTypes.Book or EventTypes.Complete)
+                .Select(interaction => interaction.ItemId)
+                .Distinct()
+                .ToList();
+            var historyClasses = historyClassIds.Count == 0
+                ? new Dictionary<string, Class>()
+                : (await _classRepository.GetByIdsAsync(historyClassIds)).ToDictionary(classItem => classItem.Id);
             var history = ScoringHistory.From(userInteractions, historyClasses);
 
             // Get candidate classes (upcoming, active, not full)

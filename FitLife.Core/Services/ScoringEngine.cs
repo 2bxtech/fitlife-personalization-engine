@@ -101,7 +101,8 @@ public class ScoringEngine : IScoringEngine
             return new(ScoreFactorKeys.TimeOfDay, "Time of day", 0, "No booking history to compare times");
         if (history.BookedStartHoursUtc.Contains(hour))
             return new(ScoreFactorKeys.TimeOfDay, "Time of day", 8, $"Starts at {time}, when classes you booked started");
-        if (history.BookedStartHoursUtc.Any(booked => Math.Abs(booked - hour) <= 1))
+        // Hours wrap at midnight: 23:00 and 00:00 are one hour apart.
+        if (history.BookedStartHoursUtc.Any(booked => Math.Min(Math.Abs(booked - hour), 24 - Math.Abs(booked - hour)) <= 1))
             return new(ScoreFactorKeys.TimeOfDay, "Time of day", 4, $"Starts at {time}, within an hour of classes you booked");
         return new(ScoreFactorKeys.TimeOfDay, "Time of day", 0, $"Starts at {time}, outside your usual booking times");
     }
@@ -109,7 +110,9 @@ public class ScoringEngine : IScoringEngine
     /// <summary>Factor 5 (rating × 2): average member rating.</summary>
     private static ScoreFactor Rating(decimal averageRating) =>
         new(ScoreFactorKeys.Rating, "Rating", (double)averageRating * 2,
-            $"Rated {averageRating.ToString("0.0", CultureInfo.InvariantCulture)} out of 5");
+            averageRating <= 0
+                ? "No ratings yet"
+                : $"Rated {averageRating.ToString("0.0", CultureInfo.InvariantCulture)} out of 5");
 
     /// <summary>Factor 6 (−5 to +3): steer away from nearly-full classes.</summary>
     private static ScoreFactor Availability(int capacity, int currentEnrollment)
