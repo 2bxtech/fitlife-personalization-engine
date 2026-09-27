@@ -37,6 +37,17 @@ public static class DemoCatalog
     public static User User(string userId, DateTime now) =>
         UserSpecs.Single(spec => spec.Id == userId).ToUser(now);
 
+    /// <summary>Display facts for a persona card, without building a user or hashing.</summary>
+    public static (string FirstName, string FitnessLevel, string[] PreferredTypes) Profile(string userId)
+    {
+        var spec = UserSpecs.Single(s => s.Id == userId);
+        return (spec.FirstName, spec.FitnessLevel, spec.PreferredTypes);
+    }
+
+    // Hashed once per process: anonymous demo routes must not pay for BCrypt per request.
+    private static readonly Lazy<string> DemoPasswordHash =
+        new(() => BCrypt.Net.BCrypt.HashPassword("Demo123!", workFactor: 10));
+
     public static List<Class> Classes(DateTime now)
     {
         var tomorrow = now.Date.AddDays(1);
@@ -193,7 +204,7 @@ public static class DemoCatalog
             Email = Email,
             // Personas sign in through the demo session endpoint; this login is a
             // local convenience only and is documented in DEMO_SETUP.md.
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword("Demo123!", workFactor: 10),
+            PasswordHash = DemoPasswordHash.Value,
             FirstName = FirstName,
             LastName = LastName,
             FitnessLevel = FitnessLevel,

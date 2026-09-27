@@ -9,6 +9,8 @@ using FitLife.Core.Interfaces;
 using FitLife.Core.Models;
 using FitLife.Infrastructure.Data;
 using FitLife.Infrastructure.Repositories;
+using FitLife.Infrastructure.Services;
+using Microsoft.Data.SqlClient;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -114,6 +116,72 @@ public class DemoPersonaTests : IClassFixture<DemoPersonaTests.DemoFactory>, IAs
             .Should().Be(0);
         (await db.Interactions.CountAsync(i => i.UserId == "user_002"))
             .Should().Be(DemoCatalog.History("user_002", DateTime.UtcNow).Count);
+    }
+
+    [Fact]
+    public async Task NewSession_ReleasesSeatsOnClassesOutsideTheDemoCatalog()
+    {
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<FitLifeDbContext>();
+            if (!await db.Classes.AnyAsync(c => c.Id == "operator_class"))
+            {
+                db.Classes.Add(new Class
+                {
+                    Id = "operator_class", Name = "Operator class", Type = "Yoga", Level = "All Levels",
+                    InstructorId = "inst_x", InstructorName = "X", StartTime = DateTime.UtcNow.AddDays(3),
+                    Capacity = 10, CurrentEnrollment = 0, IsActive = true
+                });
+                await db.SaveChangesAsync();
+            }
+        }
+        var (client, _) = await SessionAsync("emily");
+        var before = await EnrollmentAsync("operator_class");
+        (await client.PostAsync("/api/classes/operator_class/book", null)).EnsureSuccessStatusCode();
+
+        await SessionAsync("emily");
+
+        (await EnrollmentAsync("operator_class")).Should().Be(before);
+    }
+
+    [SqlServerFact]
+    public async Task ConcurrentSessions_OnSqlServer_AllSucceedAndLeaveEnrollmentConsistent()
+    {
+        var connectionString = new SqlConnectionStringBuilder(
+            Environment.GetEnvironmentVariable("FITLIFE_SQLSERVER_TEST_CONNECTION")!)
+        {
+            InitialCatalog = $"FitLifeDemoReset_{Guid.NewGuid():N}"
+        }.ConnectionString;
+        var options = new DbContextOptionsBuilder<FitLifeDbContext>()
+            .UseSqlServer(connectionString, sql => sql.EnableRetryOnFailure()).Options;
+        try
+        {
+            await using (var setup = new FitLifeDbContext(options))
+            {
+                await setup.Database.EnsureCreatedAsync();
+                await new DbSeeder(setup, NullLogger<DbSeeder>.Instance).SeedAsync();
+                // Make every catalog row differ from its canonical enrollment so each
+                // reset writes to the shared rows and contends on their row versions.
+                await setup.Classes.ExecuteUpdateAsync(c => c.SetProperty(x => x.CurrentEnrollment, 0));
+            }
+
+            var resets = Enumerable.Range(0, 8).Select(async i =>
+            {
+                await using var context = new FitLifeDbContext(options);
+                var persona = DemoCatalog.Personas[i % DemoCatalog.Personas.Count];
+                await new DemoPersonaService(context, NullLogger<DemoPersonaService>.Instance).ResetAsync(persona);
+            });
+            await Task.WhenAll(resets);
+
+            await using var verify = new FitLifeDbContext(options);
+            foreach (var classItem in await verify.Classes.ToListAsync())
+                classItem.CurrentEnrollment.Should().Be(DemoCatalog.BaselineEnrollment(classItem.Id));
+        }
+        finally
+        {
+            await using var cleanup = new FitLifeDbContext(options);
+            await cleanup.Database.EnsureDeletedAsync();
+        }
     }
 
     [Fact]

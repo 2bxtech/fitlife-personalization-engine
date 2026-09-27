@@ -155,7 +155,8 @@ the scheduled profiler assigns the segment each is seeded with.
 `POST /api/demo/personas/{id}/session` resets that persona and returns a Member
 token:
 
-- the profile, interaction history, and stored recommendations are restored;
+- the profile and interaction history are restored, and stored
+  recommendations are deleted so the next read regenerates them;
 - the persona's active bookings are cancelled;
 - class enrollment is recomputed from active bookings.
 

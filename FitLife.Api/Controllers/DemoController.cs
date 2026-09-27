@@ -46,16 +46,15 @@ public class DemoController : ControllerBase
         if (!DemoMode.IsEnabled(_configuration))
             return NotFound();
 
-        var now = DateTime.UtcNow;
         var personas = DemoCatalog.Personas.Select(persona =>
         {
-            var user = DemoCatalog.User(persona.UserId, now);
+            var profile = DemoCatalog.Profile(persona.UserId);
             return new DemoPersonaDto
             {
                 Id = persona.Id,
-                FirstName = user.FirstName,
-                FitnessLevel = user.FitnessLevel,
-                PreferredClassTypes = System.Text.Json.JsonSerializer.Deserialize<List<string>>(user.PreferredClassTypes) ?? new(),
+                FirstName = profile.FirstName,
+                FitnessLevel = profile.FitnessLevel,
+                PreferredClassTypes = profile.PreferredTypes.ToList(),
                 Headline = persona.Headline,
                 Summary = persona.Summary
             };

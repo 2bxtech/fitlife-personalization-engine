@@ -32,6 +32,27 @@ public sealed class DemoPersonaService
     /// </summary>
     public async Task<User> ResetAsync(DemoPersona persona, CancellationToken cancellationToken = default)
     {
+        // Overlapping sessions can race on catalog row versions (or with a booking).
+        // The execution strategy retries transient faults only, so retry conflicts here.
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await ResetOnceAsync(persona, cancellationToken);
+            }
+            catch (DbUpdateConcurrencyException) when (attempt < MaxConcurrencyAttempts)
+            {
+                _logger.LogInformation(
+                    "Demo reset for {PersonaId} hit a concurrency conflict; retrying ({Attempt}/{Max})",
+                    persona.Id, attempt, MaxConcurrencyAttempts);
+            }
+        }
+    }
+
+    private const int MaxConcurrencyAttempts = 3;
+
+    private async Task<User> ResetOnceAsync(DemoPersona persona, CancellationToken cancellationToken)
+    {
         var now = DateTime.UtcNow;
         var strategy = _context.Database.CreateExecutionStrategy();
         return await strategy.ExecuteAsync(async () =>
@@ -95,6 +116,22 @@ public sealed class DemoPersonaService
             booking.CancelledAt = now;
             booking.UpdatedAt = now;
         }
+
+        // Catalog enrollment is recomputed afterwards; release seats on any other
+        // (operator-created) class directly, as a normal cancellation would.
+        var catalogIds = DemoCatalog.Classes(now).Select(c => c.Id).ToHashSet();
+        var released = active
+            .Where(b => !catalogIds.Contains(b.ClassId))
+            .GroupBy(b => b.ClassId)
+            .ToDictionary(g => g.Key, g => g.Count());
+        if (released.Count == 0)
+            return;
+        var ids = released.Keys.ToList();
+        foreach (var classItem in await _context.Classes.Where(c => ids.Contains(c.Id)).ToListAsync(cancellationToken))
+        {
+            classItem.CurrentEnrollment = Math.Max(0, classItem.CurrentEnrollment - released[classItem.Id]);
+            classItem.UpdatedAt = now;
+        }
     }
 
     private async Task RestoreCatalogAsync(DateTime now, CancellationToken cancellationToken)
@@ -113,12 +150,20 @@ public sealed class DemoPersonaService
 
         foreach (var classItem in classes)
         {
-            if (classItem.StartTime <= now)
-                classItem.StartTime = canonical[classItem.Id].StartTime;
             // Enrollment is authoritative: synthetic baseline plus real active bookings.
-            classItem.CurrentEnrollment = Math.Min(
-                classItem.Capacity,
-                DemoCatalog.BaselineEnrollment(classItem.Id) + activeCounts.GetValueOrDefault(classItem.Id));
+            var expected = DemoCatalog.BaselineEnrollment(classItem.Id) + activeCounts.GetValueOrDefault(classItem.Id);
+            var enrollment = Math.Min(classItem.Capacity, expected);
+            if (enrollment < expected)
+                _logger.LogWarning(
+                    "Class {ClassId} capacity {Capacity} is below its expected enrollment {Expected}",
+                    classItem.Id, classItem.Capacity, expected);
+            var stale = classItem.StartTime <= now;
+            // Only touch rows that change, so concurrent resets rarely contend.
+            if (!stale && classItem.CurrentEnrollment == enrollment)
+                continue;
+            if (stale)
+                classItem.StartTime = canonical[classItem.Id].StartTime;
+            classItem.CurrentEnrollment = enrollment;
             classItem.UpdatedAt = now;
         }
     }

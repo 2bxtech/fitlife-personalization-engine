@@ -202,9 +202,18 @@ if (!app.Environment.IsEnvironment("Testing"))
 if (DemoMode.IsEnabled(app.Configuration) && !app.Environment.IsEnvironment("Testing") && !args.Contains("--seed"))
 {
     using var demoScope = app.Services.CreateScope();
-    await new FitLife.Infrastructure.Data.DbSeeder(
-        demoScope.ServiceProvider.GetRequiredService<FitLifeDbContext>(),
-        demoScope.ServiceProvider.GetRequiredService<ILogger<FitLife.Infrastructure.Data.DbSeeder>>()).SeedAsync();
+    try
+    {
+        await new FitLife.Infrastructure.Data.DbSeeder(
+            demoScope.ServiceProvider.GetRequiredService<FitLifeDbContext>(),
+            demoScope.ServiceProvider.GetRequiredService<ILogger<FitLife.Infrastructure.Data.DbSeeder>>()).SeedAsync();
+    }
+    catch (DbUpdateException ex)
+    {
+        // Replicas starting together race to insert the same rows; one wins and the
+        // data is identical, so a losing replica continues rather than failing startup.
+        app.Logger.LogWarning(ex, "Demo seeding lost a race with another replica; continuing");
+    }
 }
 
 // Seed database if --seed argument is provided
