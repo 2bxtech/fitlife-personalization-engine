@@ -90,6 +90,27 @@ describe('profile', () => {
   })
 })
 
+describe('profile session boundary', () => {
+  it('ignores a save that completes after the member signed out', async () => {
+    let finish!: () => void
+    vi.mocked(userService.updatePreferences).mockImplementationOnce(
+      () => new Promise((resolve) => (finish = () => resolve({ ...member, preferredClassTypes: ['Spin'] })))
+    )
+    const auth = useAuthStore()
+    auth.token = 'token-a'
+    const wrapper = mountProfile()
+    await wrapper.get('input[type="checkbox"][value="Spin"]').setValue(true)
+    await wrapper.get('form').trigger('submit')
+
+    auth.logout()
+    finish()
+    await flushPromises()
+
+    expect(auth.user).toBeNull()
+    expect(localStorage.getItem('user')).toBeNull()
+  })
+})
+
 describe('chip checkbox group', () => {
   it('is a named fieldset of real checkboxes', async () => {
     const Host = defineComponent({

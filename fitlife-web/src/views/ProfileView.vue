@@ -31,11 +31,15 @@ const dirty = computed(() => JSON.stringify(form.value) !== JSON.stringify(snaps
 
 async function save() {
   if (!user.value) return
+  // The member may sign out or switch persona while this is in flight; a
+  // response for an earlier session must not overwrite the current identity.
+  const session = authStore.token
   saving.value = true
   error.value = null
   saved.value = false
   try {
     const updated = await userService.updatePreferences(user.value.id, form.value)
+    if (authStore.token !== session || !user.value) return
     authStore.setUser({ ...user.value, ...updated })
     form.value = snapshot()
     saved.value = true
