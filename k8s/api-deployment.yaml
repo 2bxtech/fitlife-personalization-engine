@@ -50,6 +50,16 @@ spec:
             configMapKeyRef:
               name: fitlife-config
               key: KAFKA_BOOTSTRAP_SERVERS
+        - name: ReverseProxy__TrustForwardedHeaders
+          valueFrom:
+            configMapKeyRef:
+              name: fitlife-config
+              key: REVERSE_PROXY_TRUST_FORWARDED_HEADERS
+        - name: ReverseProxy__KnownNetworks__0
+          valueFrom:
+            configMapKeyRef:
+              name: fitlife-config
+              key: REVERSE_PROXY_KNOWN_NETWORK
         resources:
           requests:
             memory: "512Mi"

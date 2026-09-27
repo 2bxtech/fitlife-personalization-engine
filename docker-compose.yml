@@ -98,6 +98,11 @@ services:
     environment:
       - Process__Role=Api
       - Demo__Enabled=true
+      # The web container's nginx proxies /api; trust forwarded headers from the
+      # Compose bridge networks only. Local-only: the published API port is also
+      # reachable from the host through the bridge gateway.
+      - ReverseProxy__TrustForwardedHeaders=true
+      - ReverseProxy__KnownNetworks__0=172.16.0.0/12
       - ASPNETCORE_ENVIRONMENT=Development
       - ConnectionStrings__DefaultConnection=Server=sqlserver,1433;Database=FitLifeDb;User Id=sa;Password=YourStrong@Passw0rd;TrustServerCertificate=True;
       - Redis__ConnectionString=redis:6379
