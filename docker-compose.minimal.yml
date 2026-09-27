@@ -1,25 +1,35 @@
-# Kafka-free minimal demo profile (SQL Server + Redis + API + scheduler + web).
+# Minimal demo profile: SQL Server + API + scheduler + web. No Kafka, no Redis.
 #
 #   docker compose -f docker-compose.yml -f docker-compose.minimal.yml up -d --build api scheduler web
 #
 # Events:Transport=Direct makes the API persist accepted events in-request through
 # the same idempotent recorder the Kafka consumer uses. There is no broker,
 # consumer process, retry loop, or dead-letter topic in this profile; a failed write
-# is returned to the caller. Naming only api/scheduler/web keeps Zookeeper, Kafka,
-# and the consumer from starting.
+# is returned to the caller.
+#
+# Cache:Provider=None removes Redis: recommendation reads fall through to recently
+# persisted rows in SQL, then regeneration. Readiness checks only the database.
+#
+# Naming only api/scheduler/web keeps Zookeeper, Kafka, Redis, and the consumer
+# from starting.
 services:
   api:
     depends_on: !override
       sqlserver:
         condition: service_healthy
-      redis:
-        condition: service_healthy
     environment: !override
       - Process__Role=Api
       - Events__Transport=Direct
+      - Cache__Provider=None
       - Demo__Enabled=true
       - ReverseProxy__TrustForwardedHeaders=true
       - ReverseProxy__KnownNetworks__0=172.16.0.0/12
       - ASPNETCORE_ENVIRONMENT=Development
       - ConnectionStrings__DefaultConnection=Server=sqlserver,1433;Database=FitLifeDb;User Id=sa;Password=YourStrong@Passw0rd;TrustServerCertificate=True;
-      - Redis__ConnectionString=redis:6379
+
+  scheduler:
+    environment: !override
+      - Process__Role=Scheduler
+      - Cache__Provider=None
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Server=sqlserver,1433;Database=FitLifeDb;User Id=sa;Password=YourStrong@Passw0rd;TrustServerCertificate=True;

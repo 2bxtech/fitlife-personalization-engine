@@ -56,6 +56,15 @@ Invalidation is best-effort: the Redis client logs and swallows cache errors.
 docker compose -f docker-compose.yml -f docker-compose.minimal.yml up -d --build api scheduler web
 ```
 
+The minimal profile also sets `Cache:Provider=None`, so it runs without Redis.
+Recommendation reads skip the cache and use recently persisted rows in SQL, or
+regenerate. Readiness checks only the database, and production configuration no
+longer requires a Redis connection. **Verified:** tests assert that no Redis
+client or readiness check is registered, and a persona session returns stable
+recommendations. The Playwright journey passes against this Compose profile
+through the nginx web container. `Cache:Provider=Redis` (the default) keeps
+cache-aside behavior; unknown values fail closed.
+
 Trade-offs compared with the Kafka transport:
 
 - A `200` response means the interaction is committed to SQL, not that a broker
