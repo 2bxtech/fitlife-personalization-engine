@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { computed, ref, useId } from 'vue'
+import { computed, onMounted, ref, useId } from 'vue'
 import type { Recommendation } from '@/types/Recommendation'
+import { useAuthStore } from '@/stores/auth'
+import { useRecommendationStore } from '@/stores/recommendations'
 import AppButton from '@/components/ui/AppButton.vue'
 import ScoreBreakdown from './ScoreBreakdown.vue'
 import { formatClassTime, spotsLeft } from '@/utils/format'
@@ -13,6 +15,12 @@ const breakdownId = useId()
 const item = computed(() => props.recommendation.class)
 const left = computed(() => spotsLeft(item.value.capacity, item.value.currentEnrollment))
 const full = computed(() => left.value === 0 && !item.value.isBookedByCurrentUser)
+
+const authStore = useAuthStore()
+const recommendationStore = useRecommendationStore()
+onMounted(() => {
+  if (authStore.user) recommendationStore.trackView(authStore.user.id, item.value.id, 'recommendation')
+})
 </script>
 
 <template>

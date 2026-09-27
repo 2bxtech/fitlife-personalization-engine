@@ -81,7 +81,7 @@ router.beforeEach((to) => {
 
 /** Only same-origin, in-app paths are valid post-login destinations. */
 export function safeRedirect(value: unknown): string {
-  return typeof value === 'string' && value.startsWith('/') && !value.startsWith('//')
+  return typeof value === 'string' && value.startsWith('/') && !value.startsWith('//') && !value.includes('\\')
     ? value
     : '/dashboard'
 }

@@ -27,8 +27,10 @@ function readStoredUser(): User | null {
 }
 
 export const useAuthStore = defineStore('auth', () => {
-  const token = ref<string | null>(localStorage.getItem('token'))
   const user = ref<User | null>(readStoredUser())
+  // A token whose member record is missing or corrupt cannot render any page.
+  const token = ref<string | null>(user.value ? localStorage.getItem('token') : null)
+  if (!token.value) localStorage.removeItem('token')
   /** Demo persona the session belongs to, or null for a registered member. */
   const personaId = ref<string | null>(localStorage.getItem('personaId'))
   /** Shown once on the next page after a session ends unexpectedly. */

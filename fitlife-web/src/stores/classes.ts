@@ -14,6 +14,9 @@ export const useClassStore = defineStore('classes', () => {
 
   // Filter changes can overlap; only the newest request may update the list.
   let latestRequest = 0
+  // Bumped by reset() (sign-in, persona switch, sign-out). An action that
+  // started under an earlier session must not apply its result to this one.
+  let generation = 0
 
   async function fetchClasses(filters?: ClassFilter) {
     const request = ++latestRequest
@@ -52,17 +55,21 @@ export const useClassStore = defineStore('classes', () => {
     action: (id: string) => Promise<{ classData: Class; message: string }>,
     fallback: string
   ) {
+    const startedIn = generation
     pendingIds.value = new Set(pendingIds.value).add(classId)
     try {
       const result = await action(classId)
-      updateClass(result.classData)
-      return result
+      const current = startedIn === generation
+      if (current) updateClass(result.classData)
+      return { ...result, current }
     } catch (e: unknown) {
       throw Object.assign(new Error(getErrorMessage(e, fallback)), { cause: e })
     } finally {
-      const next = new Set(pendingIds.value)
-      next.delete(classId)
-      pendingIds.value = next
+      if (startedIn === generation) {
+        const next = new Set(pendingIds.value)
+        next.delete(classId)
+        pendingIds.value = next
+      }
     }
   }
 
@@ -91,6 +98,7 @@ export const useClassStore = defineStore('classes', () => {
 
   function reset() {
     latestRequest++
+    generation++
     classes.value = []
     currentClass.value = null
     loading.value = false

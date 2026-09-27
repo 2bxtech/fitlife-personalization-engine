@@ -66,9 +66,7 @@ export const useRecommendationStore = defineStore('recommendations', () => {
   let flushTimer: ReturnType<typeof setTimeout> | null = null
 
   function trackView(userId: string, classId: string, source: string) {
-    const key = `viewed_${userId}_${classId}`
-    if (sessionStorage.getItem(key)) return
-    sessionStorage.setItem(key, '1')
+    if (sessionStorage.getItem(viewKey(userId, classId)) || pendingViews.has(classId)) return
     pendingViews.set(classId, {
       userId,
       itemId: classId,
@@ -83,13 +81,19 @@ export const useRecommendationStore = defineStore('recommendations', () => {
     flushTimer = null
     const events = [...pendingViews.values()].slice(0, MAX_BATCH)
     events.forEach((event) => pendingViews.delete(event.itemId))
+    if (pendingViews.size > 0) flushTimer = setTimeout(flushViews, VIEW_FLUSH_MS)
     if (events.length === 0) return
     try {
       await recommendationService.trackBatchEvents(events)
+      events.forEach((event) => sessionStorage.setItem(viewKey(event.userId, event.itemId), '1'))
     } catch (e: unknown) {
-      // Tracking must never interrupt the member's flow.
+      // Tracking must never interrupt the member's flow; unsent views may be retried later.
       console.warn('View tracking failed', e)
     }
+  }
+
+  function viewKey(userId: string, classId: string) {
+    return `viewed_${userId}_${classId}`
   }
 
   async function trackEvent(event: UserEvent) {

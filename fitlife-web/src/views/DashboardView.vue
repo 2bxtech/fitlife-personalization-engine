@@ -49,6 +49,8 @@ async function handleAction(classId: string, action: 'book' | 'cancel') {
   try {
     const result =
       action === 'book' ? await classStore.bookClass(classId) : await classStore.cancelBooking(classId)
+    // The member switched personas while this was in flight; it belongs to them, not this view.
+    if (!result.current) return
     recommendationStore.applyClassUpdate(result.classData)
     toast.success(result.message)
   } catch (error: unknown) {
@@ -98,7 +100,7 @@ onMounted(async () => {
           :variant="persona.id === authStore.personaId ? 'primary' : 'secondary'"
           :aria-pressed="persona.id === authStore.personaId"
           :loading="switching === persona.id"
-          :disabled="switching !== null"
+          :disabled="switching !== null || classStore.pendingIds.size > 0"
           :data-testid="`switch-${persona.id}`"
           @click="switchPersona(persona)"
         >
