@@ -12,7 +12,8 @@
     "test:coverage": "vitest run --coverage",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
-    "format": "prettier --write src/"
+    "format": "prettier --write src/",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@vueuse/core": "^14.0.0",
@@ -22,8 +23,10 @@
     "vue-router": "^4.6.3"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@eslint/js": "^10.0.1",
     "@pinia/testing": "^1.0.3",
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4.1.16",
     "@types/node": "^24.9.2",
     "@vitejs/plugin-vue": "^6.0.1",
