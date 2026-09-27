@@ -1,592 +1,99 @@
-# FitLife Demo Setup Guide
+# FitLife demo guide
 
-This guide walks you through setting up FitLife for both **local** and **hosted** demos.
+How to run the demo locally, what to show in five minutes, and what each claim
+rests on. Labels follow the repository's evidence vocabulary: **verified** means
+exercised by a test or command, and **configured** means present in files but
+not proven live.
 
-## Demo operator access
+![Recommendations with the score breakdown open](public-docs/images/dashboard-breakdown.png)
 
-Catalog create, update, and delete operations require the `Operator` role.
-Self-registration always creates a member session. In Development only, a
-seeded demo account can be granted operator access through server-side
-configuration:
+## Run it
+
+### One command (Docker only)
+
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.minimal.yml up -d --build api scheduler web
+```
+
+This starts SQL Server, Redis, the API, the scheduler, and the web app, without
+Kafka. The API runs in demo mode: it applies migrations, seeds the synthetic
+catalog and personas at startup, and persists events in-request (the Direct
+transport; see [Worker topology](public-docs/Worker-Topology.md#kafka-free-minimal-demo)).
+
+- App: <http://localhost:3000>
+- API and Swagger: <http://localhost:5269/swagger>
+
+The full event pipeline (Kafka broker, consumer, and dead-letter topic) is
+`docker compose up -d --build`.
+
+### From source
+
+```powershell
+docker compose up -d sqlserver redis                           # dependencies only
+dotnet run --project FitLife.Api -- --Events:Transport=Direct  # demo mode is on in the launch profile
+cd fitlife-web; npm ci --legacy-peer-deps; npm run dev          # http://localhost:3000
+```
+
+## The five-minute demo
+
+1. **Home.** The headline says what this is: rankings you can audit, produced by
+   fixed rules rather than a trained model. Point out that there is no sign-up.
+2. **Explore as Sarah.** One click starts a session for a synthetic member and
+   resets her to a known state. Her top classes are morning yoga with the
+   instructor she has trained with most.
+3. **Why #1?** Open the breakdown on the top card. It lists all nine rules, each
+   with its points and the fact behind them, for example "You've completed 6
+   classes with Sarah Martinez, +20". The one-line reason above the card is
+   built only from rules that scored.
+4. **Book.** The card shows *Booked* and the seat count drops immediately. The
+   re-rank happens afterwards; if it fails, the booking still stands and a quiet
+   warning appears.
+5. **View as Mike.** The same catalog ranks differently: evening HIIT and
+   strength come first for an advanced member with that history.
+6. **View as Emily.** With only one completed class, her ranking leans on
+   stated preferences, level fit, and class quality. The reasons say so.
+7. **Profile (optional).** Change a preferred class type and save. The ranking
+   updates, because preferred types are worth 15 points.
+
+Starting a session for a persona always resets that persona. Anything the
+previous visitor booked is undone, and seats return to the catalog.
+
+## What to point out, and the evidence
+
+| Claim | Evidence |
+|---|---|
+| Explanations never cite a rule that did not score | **Verified**: `ExplainableRecommendationTests`, and the e2e journey checks the breakdown |
+| Two personas get different, stable rankings | **Verified**: `DemoPersonaTests` (disjoint top three, repeatable across sessions) |
+| The scheduled profiler agrees with every seeded persona | **Verified**: `ScheduledProfiler_AssignsEverySeededUserTheSegmentTheyAreSeededWith` |
+| The last seat cannot be double-booked | **Verified** against SQL Server in CI: `ConcurrentLastSeatRequests_CreateExactlyOneBooking` |
+| Duplicate events are stored once | **Verified** against SQL Server in CI, for both the Kafka consumer and the Direct transport |
+| Concurrent persona resets and seeding stay consistent | **Verified** against SQL Server in CI (transaction-scoped application locks) |
+| The demo flow works on desktop and mobile, by keyboard, with no serious axe violations | **Verified**: Playwright `e2e` job in CI |
+| Separate API, consumer, and scheduler processes | **Configured** in Compose and Kubernetes; a local Compose smoke run is recorded |
+| A hosted public demo | **Not yet deployed** |
+
+## Operator access
+
+Catalog create, update, and delete require the `Operator` role. Self-registration
+and demo sessions always create members. In Development only, a seeded account
+can be granted operator access through server-side configuration:
 
 ```powershell
 $env:DemoAuthorization__OperatorEmails__0 = "sarah.johnson@example.com"
 ```
 
-Do not configure this demo allowlist in production. Log in after setting the
-value so the server can issue a new role-bearing token.
-
-## 📋 Prerequisites
-
-### Local Demo
-- ✅ Docker Desktop installed and **running**
-- ✅ .NET 8.0 SDK
-- ✅ Node.js 20+
-- ✅ Git
-
-### Hosted Demo (Azure)
-- ✅ Azure CLI installed
-- ✅ Azure subscription (free tier works)
-- ✅ kubectl installed
-- ✅ Docker Desktop
-
----
-
-## 🖥️ Local Demo Setup
-
-### Step 1: Start Docker Desktop
-```powershell
-# Verify Docker is running
-docker --version
-docker ps
-```
-
-**If you get an error**: Open Docker Desktop app and wait for it to start completely.
-
-### Step 2: Clone and Navigate
-```powershell
-cd c:\Code\fitlife-personalization-engine
-```
-
-### Step 3: Start Infrastructure
-```powershell
-# Start SQL Server, Redis, Kafka, Zookeeper
-docker-compose up -d
-
-# Wait ~30 seconds for services to be ready
-Start-Sleep -Seconds 30
-
-# Verify all containers are running
-docker ps
-# You should see: fitlife-sqlserver, fitlife-redis, fitlife-kafka, fitlife-zookeeper
-```
-
-### Step 4: Setup Backend Database
-```powershell
-cd FitLife.Api
-
-# Apply database migrations
-dotnet ef database update
-
-# Seed sample data (5 users, 10 classes, interactions)
-dotnet run --seed
-
-# Verify seeding worked
-# You should see: "Database seeded successfully!"
-```
-
-### Step 5: Start Backend API
-```powershell
-# Still in FitLife.Api directory
-dotnet run
-
-# API will start at: http://localhost:5269
-# Swagger UI: http://localhost:5269/swagger
-```
-
-**Keep this terminal open!**
-
-### Step 6: Start Frontend (New Terminal)
-```powershell
-# Open NEW PowerShell terminal
-cd c:\Code\fitlife-personalization-engine\fitlife-web
-
-# Install dependencies (first time only)
-npm install
-
-# Start dev server
-npm run dev
-
-# Frontend will start at: http://localhost:3000
-```
-
-**Keep this terminal open too!**
-
-### Step 7: Test the Demo
-
-**Open browser**: http://localhost:3000
-
-**Demo User Credentials** (all use password: `Demo123!`):
-1. **Sarah Johnson** - Yoga Enthusiast
-   - Email: `sarah.johnson@example.com`
-   - Shows Yoga/Pilates recommendations
-
-2. **Mike Chen** - Highly Active
-   - Email: `mike.chen@example.com`
-   - Shows HIIT/Strength/Spin recommendations
-
-3. **Emily Rodriguez** - Beginner
-   - Email: `emily.rodriguez@example.com`
-   - Shows beginner-friendly classes
-
-4. **David Kim** - Cardio Lover
-   - Email: `david.kim@example.com`
-   - Shows Spin/Running/Cardio recommendations
-
-5. **Jessica Taylor** - Strength Trainer
-   - Email: `jessica.taylor@example.com`
-   - Shows Strength/HIIT recommendations
-
-**Demo Flow**:
-1. Login with one of the demo users
-2. View personalized recommendations on dashboard
-3. Browse class catalog with filters (type, level)
-4. Book a class from the catalog
-5. Refresh recommendations to see personalization adapt
-6. Update preferences in profile page
-7. Check different user profiles to see personalization differences
-
-### Troubleshooting Local Demo
-
-**Docker not starting?**
-```powershell
-# Check Docker Desktop is running
-docker info
-
-# Restart Docker Compose
-docker-compose down
-docker-compose up -d
-```
-
-**Database connection failed?**
-```powershell
-# Check SQL Server is running
-docker logs fitlife-sqlserver
-
-# Verify connection string in appsettings.json matches docker-compose.yml
-# Default: Server=localhost,1433;Database=FitLifeDb;User Id=sa;Password=YourStrong@Passw0rd;
-```
-
-**Kafka errors?**
-```powershell
-# Check Kafka is running
-docker logs fitlife-kafka
-
-# Verify events are being produced
-docker exec -it fitlife-kafka kafka-console-consumer --bootstrap-server localhost:9092 --topic user-events --from-beginning
-```
-
-**Redis not connecting?**
-```powershell
-# Check Redis is running
-docker exec -it fitlife-redis redis-cli ping
-# Should return: PONG
-
-# View cached recommendations
-docker exec -it fitlife-redis redis-cli
-> KEYS rec:*
-> GET rec:user_001
-```
-
-**Frontend can't reach API?**
-```powershell
-# Verify CORS is configured correctly
-# Check appsettings.json: "Cors:AllowedOrigins" includes "http://localhost:3000"
-
-# Test API directly
-Invoke-RestMethod -Uri "http://localhost:5269/health"
-```
-
----
-
-## ☁️ Hosted Demo Setup (Azure)
-
-### Option A: Full Azure Deployment (~45 minutes)
-
-**Estimated Monthly Cost**: $50-100 (smallest instances)
-
-#### Step 1: Azure Login & Resource Group
-```bash
-# Login to Azure
-az login
-
-# Create resource group
-az group create --name fitlife-rg --location eastus
-```
-
-#### Step 2: Create Azure Container Registry
-```bash
-# Create ACR (Basic tier for demo)
-az acr create \
-  --name fitlifeacr \
-  --resource-group fitlife-rg \
-  --sku Basic
-
-# Enable admin access
-az acr update --name fitlifeacr --admin-enabled true
-
-# Get credentials
-az acr credential show --name fitlifeacr --resource-group fitlife-rg
-# Save username and password for GitHub secrets
-```
-
-#### Step 3: Create Azure SQL Database
-```bash
-# Create SQL Server
-az sql server create \
-  --name fitlife-sql-server \
-  --resource-group fitlife-rg \
-  --location eastus \
-  --admin-user fitlifeadmin \
-  --admin-password '<YourSecurePassword123!>'
-
-# Allow Azure services to access
-az sql server firewall-rule create \
-  --resource-group fitlife-rg \
-  --server fitlife-sql-server \
-  --name AllowAzureServices \
-  --start-ip-address 0.0.0.0 \
-  --end-ip-address 0.0.0.0
-
-# Create database (S0 tier for demo)
-az sql db create \
-  --name FitLifeDb \
-  --server fitlife-sql-server \
-  --resource-group fitlife-rg \
-  --service-objective S0
-```
-
-#### Step 4: Create AKS Cluster
-```bash
-# Create AKS cluster (smallest node size for demo)
-az aks create \
-  --name fitlife-aks \
-  --resource-group fitlife-rg \
-  --node-count 2 \
-  --node-vm-size Standard_B2s \
-  --attach-acr fitlifeacr \
-  --enable-managed-identity \
-  --generate-ssh-keys
-
-# Get credentials
-az aks get-credentials \
-  --resource-group fitlife-rg \
-  --name fitlife-aks
-```
-
-#### Step 5: Build and Push Docker Images
-```powershell
-# Login to ACR
-az acr login --name fitlifeacr
-
-# Build and push API image
-docker build -t fitlifeacr.azurecr.io/fitlife-api:latest -f FitLife.Api/Dockerfile .
-docker push fitlifeacr.azurecr.io/fitlife-api:latest
-
-# Build and push Web image
-docker build -t fitlifeacr.azurecr.io/fitlife-web:latest -f fitlife-web/Dockerfile ./fitlife-web
-docker push fitlifeacr.azurecr.io/fitlife-web:latest
-```
-
-#### Step 6: Update Kubernetes Manifests
-```powershell
-# Update k8s/secrets.yaml with actual values
-# Base64 encode connection strings:
-$sqlConnString = "Server=fitlife-sql-server.database.windows.net,1433;Database=FitLifeDb;User Id=fitlifeadmin;Password=<YourPassword>;TrustServerCertificate=True;"
-$bytes = [System.Text.Encoding]::UTF8.GetBytes($sqlConnString)
-$encoded = [Convert]::ToBase64String($bytes)
-Write-Output $encoded
-
-# Update k8s manifests:
-# 1. Replace <ACR_REGISTRY> with fitlifeacr.azurecr.io in deployment files
-# 2. Update secrets.yaml with encoded connection strings
-```
-
-#### Step 7: Deploy to Kubernetes
-```bash
-# Create namespace
-kubectl apply -f k8s/namespace.yaml
-
-# Apply secrets and config
-kubectl apply -f k8s/secrets.yaml
-kubectl apply -f k8s/configmap.yaml
-
-# Deploy applications
-kubectl apply -f k8s/api-deployment.yaml
-kubectl apply -f k8s/web-deployment.yaml
-
-# Apply HPA (auto-scaling)
-kubectl apply -f k8s/hpa.yaml
-
-# Apply ingress (for external access)
-kubectl apply -f k8s/ingress.yaml
-
-# Wait for deployments
-kubectl rollout status deployment/fitlife-api -n fitlife --timeout=5m
-kubectl rollout status deployment/fitlife-web -n fitlife --timeout=5m
-```
-
-#### Step 8: Apply Database Migrations
-```bash
-# Get API pod name
-kubectl get pods -n fitlife
-
-# Exec into API pod
-kubectl exec -it <api-pod-name> -n fitlife -- /bin/bash
-
-# Run migrations
-dotnet ef database update
-dotnet run --seed
-
-# Exit pod
-exit
-```
-
-#### Step 9: Get Public URL
-```bash
-# Get external IP
-kubectl get service fitlife-web-service -n fitlife
-
-# Or if using Ingress:
-kubectl get ingress -n fitlife
-
-# Access at: http://<EXTERNAL-IP>
-```
-
-#### Step 10: Setup GitHub Actions (Optional)
-```bash
-# Create service principal for GitHub Actions
-az ad sp create-for-rbac \
-  --name "fitlife-github-actions" \
-  --role contributor \
-  --scopes /subscriptions/<subscription-id>/resourceGroups/fitlife-rg \
-  --sdk-auth
-
-# Add to GitHub Secrets:
-# - AZURE_CREDENTIALS (JSON output from above)
-# - ACR_USERNAME (from step 2)
-# - ACR_PASSWORD (from step 2)
-
-# Enable workflow by removing `if: false` from .github/workflows/deploy.yml
-```
-
----
-
-### Option B: Quick Deploy with Railway/Render (~15 minutes)
-
-**Estimated Monthly Cost**: $0-20 (free tier available)
-
-#### Railway.app (Recommended for Speed)
-
-1. **Sign up**: https://railway.app (GitHub login)
-
-2. **Create New Project** → "Deploy from GitHub"
-
-3. **Add Services**:
-   - **SQL Server-compatible database**
-     - FitLife uses the SQL Server EF Core provider; PostgreSQL connection
-       strings are not supported.
-   
-   - **Redis** (Railway Plugin)
-     - One-click add from marketplace
-   
-   - **API Service**:
-     - Root directory: `/FitLife.Api`
-     - Build command: `dotnet publish -c Release -o out`
-     - Start command: `dotnet out/FitLife.Api.dll --seed`
-     - Port: `8080`
-   
-   - **Web Service**:
-     - Root directory: `/fitlife-web`
-     - Build command: `npm install && npm run build`
-     - Start command: `npm run preview`
-     - Port: `3000`
-
-4. **Required production environment variables** (API Service):
-
-   - `ConnectionStrings__DefaultConnection`
-   - `Redis__ConnectionString`
-   - `Kafka__BootstrapServers`
-   - `Jwt__Secret`
-
-   Supply values through the hosting platform's secret/configuration store.
-   Production startup rejects missing values, tracked demo placeholders, and
-   local dependency endpoints. The JWT secret must contain at least 32
-   characters.
-
-5. **Deploy**: Automatic on git push
-
-6. **Public URL**: Railway provides `https://<your-app>.railway.app`
-
-**Note**: Railway doesn't have managed Kafka. For full functionality, you can:
-- Use Upstash Kafka (serverless, free tier): https://upstash.com
-- Or disable background workers temporarily for demo
-
-#### Render.com Alternative
-
-Similar process to Railway:
-1. Create Blueprint or individual services
-2. Connect GitHub repo
-3. Add PostgreSQL, Redis from Render marketplace
-4. Deploy with environment variables
-5. Get public URL: `https://<your-app>.onrender.com`
-
----
-
-## 🎬 Demo Script
-
-### 5-Minute Demo Flow
-
-**Intro (30 seconds)**:
-> "FitLife is an explainable, deterministic gym class recommendation system that uses a 9-factor scoring algorithm to personalize recommendations based on user preferences, fitness level, historical behavior, and real-time availability."
-
-**Login (30 seconds)**:
-- Login as Sarah Johnson (Yoga Enthusiast)
-- Show dashboard with personalized recommendations
-
-**Explain Personalization (1 minute)**:
-- Point out recommendations are mostly Yoga/Pilates classes
-- Show scoring explanation on each recommendation card: "Because you love Yoga classes and you enjoy classes with Sarah Martinez"
-- Highlight class info: rating, availability, instructor
-
-**Show Behavior Tracking (1 minute)**:
-- Book a HIIT class (outside usual preferences)
-- Refresh recommendations
-- Note: System adapts - now showing more HIIT classes mixed with Yoga
-
-**Multi-User Demo (1.5 minutes)**:
-- Logout, login as Mike Chen (Highly Active)
-- Show completely different recommendations: HIIT, Spin, Strength
-- Highlight: "Same system, different user, personalized experience"
-
-**Technical Deep Dive (1 minute)** (optional for technical audience):
-- Open Swagger UI: `http://localhost:5269/swagger`
-- Show API endpoints
-- Demonstrate real-time event tracking endpoint
-- Show caching strategy (Redis inspection)
-
-**Wrap-up (30 seconds)**:
-> "FitLife demonstrates event-driven architecture, caching strategies, background job processing, and explainable personalization using production-oriented patterns."
-
----
-
-## 📊 Demo Talking Points
-
-### Architecture Highlights
-- **Event-Driven**: User actions → Kafka → Background workers → Database
-- **Caching Layer**: Redis with 10-min TTL for fast recommendations
-- **Batch Processing**: Recommendations generated every 10 minutes for all active users
-- **Kubernetes Assets**: configured HPA, probes, and graceful shutdown; not verified in a live cluster
-
-### Algorithm Highlights
-- **9 Factors**: Fitness level, preferences, instructor, time, rating, availability, segment, recency, popularity
-- **Weighted Scoring**: Instructor preference weighted highest (20 points)
-- **User Segmentation**: Beginner, HighlyActive, YogaEnthusiast, etc.
-- **Explainable AI**: Every recommendation includes human-readable reason
-
-### Tech Stack
-- **Backend**: .NET 8, EF Core, Kafka, Redis
-- **Frontend**: Vue 3, TypeScript, Pinia, Tailwind CSS
-- **Infrastructure**: Docker, Kubernetes manifests (designed, not currently deployed), Azure (ACR, SQL)
-- **CI/CD**: GitHub Actions validates pushes to `main` and `development` plus pull requests to `main`; image build/push/deploy stages are configured but disabled pending infrastructure provisioning
-
----
-
-## 🛠️ Demo Customization
-
-### Add Your Own Data
-
-**Add a new user**:
-```sql
-INSERT INTO Users (Id, Email, PasswordHash, FirstName, LastName, FitnessLevel, Goals, PreferredClassTypes, Segment, CreatedAt)
-VALUES ('user_006', 'your.email@example.com', '<bcrypt-hash>', 'Your', 'Name', 'Intermediate', '["Goal1","Goal2"]', '["Yoga"]', 'General', GETUTCDATE());
-```
-
-**Add a new class**:
-```sql
-INSERT INTO Classes (Id, Name, Type, InstructorId, InstructorName, Level, Description, StartTime, Duration, Capacity, CurrentEnrollment, AverageRating, WeeklyBookings, IsActive, CreatedAt)
-VALUES ('class_011', 'New Class', 'Yoga', 'inst_sarah', 'Sarah Martinez', 'All Levels', 'Description', DATEADD(day, 1, GETUTCDATE()), 60, 30, 0, 4.5, 0, 1, GETUTCDATE());
-```
-
-### Modify Scoring Weights
-Edit `FitLife.Core/Services/ScoringEngine.cs` to adjust factor weights for your use case.
-
----
-
-## 🚨 Common Issues & Solutions
-
-### Docker Containers Won't Start
-```powershell
-# Check Docker Desktop is running
-docker info
-
-# Remove old containers and volumes
-docker-compose down -v
-docker-compose up -d
-```
-
-### Port Already in Use
-```powershell
-# Find process using port
-netstat -ano | findstr :5269
-
-# Kill process (replace PID)
-taskkill /PID <PID> /F
-```
-
-### Migration Failed
-```powershell
-# Drop and recreate database
-docker-compose down -v
-docker-compose up -d
-Start-Sleep -Seconds 30
-dotnet ef database update
-dotnet run --seed
-```
-
-### Recommendations Not Showing
-```powershell
-# On-demand recommendations work in the API; scheduled refresh is optional.
-# If using scheduled refresh, check its separate process is running.
-# View scheduler process logs for "RecommendationGeneratorService started"
-# See public-docs/Worker-Topology.md for separate worker startup commands.
-
-# Manually trigger recommendation generation
-Invoke-RestMethod -Uri "http://localhost:5269/api/recommendations/user_001/refresh" -Headers @{Authorization="Bearer <token>"}
-```
-
----
-
-## ✅ Pre-Demo Checklist
-
-**Before presenting**:
-- [ ] Docker Desktop is running
-- [ ] All 4 containers are healthy: `docker ps`
-- [ ] API is running: http://localhost:5269/health returns 200
-- [ ] Frontend is running: http://localhost:3000 loads
-- [ ] Can login with demo user
-- [ ] Recommendations are showing
-- [ ] Browser dev tools closed (for clean demo)
-- [ ] Swagger UI tested (if showing technical audience)
-- [ ] Demo script reviewed
-
-**Have Ready**:
-- [ ] Demo user credentials written down
-- [ ] Architecture diagram (docs/ARCHITECTURE.md)
-- [ ] Scoring algorithm explanation (docs/RECOMMENDATIONS.md)
-- [ ] Terminal windows positioned for quick switching
-- [ ] Browser tabs: Frontend, Swagger UI, GitHub repo
-
----
-
-## 🎓 Further Learning
-
-**Dive Deeper**:
-- `docs/ARCHITECTURE.md` - System design details
-- `docs/RECOMMENDATIONS.md` - Scoring algorithm deep-dive
-- `docs/API.md` - Complete API reference
-- `docs/DATABASE.md` - Schema and indexes
-- `docs/DEPLOYMENT.md` - Production deployment guide
-
-**Extend the Project**:
-- Add real-time notifications (SignalR)
-- Integrate ML model (collaborative filtering)
-- Add social features (friends, sharing)
-- Implement A/B testing framework
-- Add analytics dashboard
-
----
-
-**Questions?** Check troubleshooting sections or review the codebase documentation.
-
-**Ready to demo!** 🚀
+Sign in with that account's email and the local demo password `Demo123!` after
+setting the value. Production configuration rejects this allowlist at startup.
+
+## Troubleshooting
+
+| Symptom | Check |
+|---|---|
+| "Demo personas are unavailable" | The API is still starting; `curl http://localhost:5269/health/ready` |
+| "Demo mode is off in this environment" | Set `Demo__Enabled=true` for the API |
+| A container name is already in use | An older FitLife stack exists; `docker compose down`, or use `-p <name>` |
+| Port 1433, 6380, 5269, or 3000 is busy | Stop the other process, or change the host port mapping |
+| Recommendations look stale after a booking | Select **Recompute**; the cache is invalidated on a best-effort basis |
+
+For the design behind the demo, see [Recommendation model](public-docs/Recommendations.md),
+[Architecture](public-docs/Architecture.md), and [Worker topology](public-docs/Worker-Topology.md).
