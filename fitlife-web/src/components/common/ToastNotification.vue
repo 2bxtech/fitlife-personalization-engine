@@ -25,7 +25,7 @@ const notices = computed(() => toasts.value.filter((toast) => toast.type !== 'er
 
 <template>
   <div class="pointer-events-none fixed inset-x-4 bottom-4 z-50 flex flex-col items-end gap-2 sm:inset-x-auto sm:right-4">
-    <div role="alert" aria-live="assertive" class="flex w-full flex-col items-end gap-2 sm:w-96" data-testid="toast-alerts">
+    <div role="alert" aria-live="assertive" aria-atomic="false" class="flex w-full flex-col items-end gap-2 sm:w-96" data-testid="toast-alerts">
       <div
         v-for="toast in errors"
         :key="toast.id"
@@ -39,7 +39,7 @@ const notices = computed(() => toasts.value.filter((toast) => toast.type !== 'er
         </button>
       </div>
     </div>
-    <div role="status" aria-live="polite" class="flex w-full flex-col items-end gap-2 sm:w-96" data-testid="toast-notices">
+    <div role="status" aria-live="polite" aria-atomic="false" class="flex w-full flex-col items-end gap-2 sm:w-96" data-testid="toast-notices">
       <div
         v-for="toast in notices"
         :key="toast.id"

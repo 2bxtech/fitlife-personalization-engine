@@ -59,7 +59,7 @@ onKeyStroke('Escape', () => {
         </template>
         <template v-else>
           <AppButton variant="ghost" size="sm" to="/login">Sign in</AppButton>
-          <AppButton size="sm" to="/">Try the demo</AppButton>
+          <AppButton size="sm" to="/register">Create account</AppButton>
         </template>
       </div>
 
@@ -95,7 +95,7 @@ onKeyStroke('Escape', () => {
         </button>
       </template>
       <template v-else>
-        <router-link to="/" class="block rounded-lg px-3 py-2 font-medium text-primary-800 hover:bg-primary-50">Try the demo</router-link>
+        <router-link to="/register" class="block rounded-lg px-3 py-2 font-medium text-primary-800 hover:bg-primary-50">Create account</router-link>
         <router-link to="/login" class="block rounded-lg px-3 py-2 font-medium text-slate-700 hover:bg-slate-100">Sign in</router-link>
       </template>
     </div>

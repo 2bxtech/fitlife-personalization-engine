@@ -16,7 +16,8 @@ const announcement = ref('')
 onMounted(async () => {
   await router.isReady()
   watch(
-    () => route.fullPath,
+    // Path, not fullPath: query or hash changes (filters, the skip link) are not new pages.
+    () => route.path,
     async () => {
       await nextTick()
       announcement.value = document.title
