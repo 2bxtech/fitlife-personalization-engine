@@ -18,6 +18,8 @@ services:
       - Process__Role=Api
       - Events__Transport=Direct
       - Demo__Enabled=true
+      - ReverseProxy__TrustForwardedHeaders=true
+      - ReverseProxy__KnownNetworks__0=172.16.0.0/12
       - ASPNETCORE_ENVIRONMENT=Development
       - ConnectionStrings__DefaultConnection=Server=sqlserver,1433;Database=FitLifeDb;User Id=sa;Password=YourStrong@Passw0rd;TrustServerCertificate=True;
       - Redis__ConnectionString=redis:6379

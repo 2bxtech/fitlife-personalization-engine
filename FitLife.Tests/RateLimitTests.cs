@@ -50,16 +50,49 @@ public class RateLimitTests
         statuses.Should().Contain(HttpStatusCode.TooManyRequests);
     }
 
+    [Fact]
+    public async Task ForwardedHeadersFromAnUntrustedPeer_AreIgnored()
+    {
+        // The connection (10.1.2.3) is outside the trusted proxy network, so a
+        // rotating X-Forwarded-For cannot choose the rate-limit identity.
+        using var factory = new FixedClientIpFactory(trustForwardedHeaders: true, proxyNetwork: "192.168.0.0/16");
+        var client = factory.CreateClient();
+
+        var statuses = new List<HttpStatusCode>();
+        for (var i = 0; i < 15; i++)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/health/live");
+            request.Headers.Add("X-Forwarded-For", $"192.0.2.{i}");
+            statuses.Add((await client.SendAsync(request)).StatusCode);
+        }
+
+        statuses.Should().Contain(HttpStatusCode.TooManyRequests);
+    }
+
+    [Fact]
+    public void TrustingForwardedHeaders_WithoutKnownNetworks_FailsStartup()
+    {
+        using var factory = new FixedClientIpFactory(trustForwardedHeaders: true, proxyNetwork: "");
+        var start = () => factory.CreateClient();
+        start.Should().Throw<InvalidOperationException>().WithMessage("*KnownNetworks*");
+    }
+
     private sealed class FixedClientIpFactory : FitLifeWebApplicationFactory
     {
         private readonly bool _trustForwardedHeaders;
+        private readonly string _proxyNetwork;
 
-        public FixedClientIpFactory(bool trustForwardedHeaders) => _trustForwardedHeaders = trustForwardedHeaders;
+        public FixedClientIpFactory(bool trustForwardedHeaders, string proxyNetwork = "10.0.0.0/8")
+        {
+            _trustForwardedHeaders = trustForwardedHeaders;
+            _proxyNetwork = proxyNetwork;
+        }
 
         protected override IReadOnlyDictionary<string, string> StartupSettings =>
             new Dictionary<string, string>
             {
-                ["ReverseProxy:TrustForwardedHeaders"] = _trustForwardedHeaders ? "true" : "false"
+                ["ReverseProxy:TrustForwardedHeaders"] = _trustForwardedHeaders ? "true" : "false",
+                ["ReverseProxy:KnownNetworks:0"] = _proxyNetwork
             };
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)

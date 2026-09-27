@@ -151,15 +151,35 @@ builder.Services.AddSingleton<IRateLimitConfiguration, FitLife.Api.Security.Conn
 builder.Services.AddSingleton<IProcessingStrategy, AsyncKeyLockProcessingStrategy>();
 
 // Behind a reverse proxy (e.g. a managed ingress) the connection address is the
-// proxy's. When explicitly trusted, take only the address the nearest proxy
-// appended (ForwardLimit = 1); values a client prepends are ignored.
+// proxy's. When explicitly trusted, forwarded headers are accepted only from the
+// configured proxy networks, and only the address the nearest proxy appended is
+// used (ForwardLimit = 1), so values a client prepends are ignored.
 var trustForwardedHeaders = builder.Configuration.GetValue("ReverseProxy:TrustForwardedHeaders", false);
+var proxyNetworks = (builder.Configuration.GetSection("ReverseProxy:KnownNetworks").Get<string[]>() ?? Array.Empty<string>())
+    .Where(network => !string.IsNullOrWhiteSpace(network))
+    .Select(network =>
+    {
+        var parts = network.Split('/');
+        return parts.Length == 2
+               && System.Net.IPAddress.TryParse(parts[0], out var prefix)
+               && int.TryParse(parts[1], out var length)
+            ? new Microsoft.AspNetCore.HttpOverrides.IPNetwork(prefix, length)
+            : throw new InvalidOperationException($"ReverseProxy:KnownNetworks entry '{network}' is not a CIDR range.");
+    })
+    .ToArray();
+if (trustForwardedHeaders && proxyNetworks.Length == 0)
+{
+    throw new InvalidOperationException(
+        "ReverseProxy:TrustForwardedHeaders requires ReverseProxy:KnownNetworks (proxy CIDR ranges).");
+}
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
     options.ForwardLimit = 1;
     options.KnownNetworks.Clear();
     options.KnownProxies.Clear();
+    foreach (var network in proxyNetworks)
+        options.KnownNetworks.Add(network);
 });
 
 // Configure CORS for production

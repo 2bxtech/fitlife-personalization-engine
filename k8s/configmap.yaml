@@ -11,3 +11,7 @@ data:
   JWT_ISSUER: "FitLife.Api"
   JWT_AUDIENCE: "FitLife.Client"
   JWT_EXPIRATION_HOURS: "24"
+  # Rate limiting identifies clients by the address the ingress controller appends.
+  # Set the CIDR to the cluster's ingress/pod network before applying.
+  ReverseProxy__TrustForwardedHeaders: "true"
+  ReverseProxy__KnownNetworks__0: "10.0.0.0/8"
